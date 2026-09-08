@@ -1,0 +1,32 @@
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  Exclude:
+    - "lib/polytypo/data/**/*"
+    - "vendor/**/*"
+
+# The typography rules are index-based scans with many named guards (matching the JS/Python/Go
+# reference implementations' own structure) -- long methods and high complexity are inherent to
+# a single left-to-right scan with explicit lookaround, not a style problem to fix by splitting
+# arbitrarily (ARCHITECTURE.md section 4.1: no regex, a single scan, explicit index guards).
+Metrics/MethodLength:
+  Max: 120
+Metrics/AbcSize:
+  Max: 80
+Metrics/CyclomaticComplexity:
+  Max: 30
+Metrics/PerceivedComplexity:
+  Max: 30
+Metrics/ClassLength:
+  Max: 300
+Metrics/ModuleLength:
+  Max: 300
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*"
+
+Style/Documentation:
+  Enabled: false
+
+Layout/LineLength:
+  Max: 110

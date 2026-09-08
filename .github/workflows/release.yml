@@ -1,0 +1,43 @@
+name: Release
+
+# Tag-triggered only. Publishes via RubyGems.org Trusted Publishing (OIDC) -- verified this
+# session to be a real, current RubyGems feature with no npm-style bootstrap-token requirement:
+# an operator configures a pending trusted publisher on rubygems.org naming this repo and this
+# workflow file before the gem is ever pushed; the first successful publish through it converts
+# the pending publisher to a normal one. Same bootstrap-free shape as PyPI Trusted Publishing,
+# which the Python port already used.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Verify and publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for RubyGems Trusted Publishing; nothing else needs it.
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.4"
+          bundler-cache: true
+
+      - name: Verify canonical spec tag exists in polytypo/polytypo
+        run: ruby script/verify_spec_tag.rb
+
+      - name: Lint (RuboCop)
+        run: bundle exec rubocop
+
+      - name: Test
+        run: bundle exec rspec
+
+      - name: Release to RubyGems.org
+        uses: rubygems/release-gem@7f9650160c1a4e7989fdc9855807bdbd421d8b6b # v1.4.1

@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Ruby ${{ matrix.ruby-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby-version: ["3.3", "3.4", "4.0"]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: ${{ matrix.ruby-version }}
+          bundler-cache: true
+
+      - name: Lint (RuboCop)
+        run: bundle exec rubocop
+
+      - name: Test
+        run: bundle exec rspec --exclude-pattern "spec/packaging_spec.rb"
+
+      # Installs the actual built .gem into a scratch location and exercises every public entry
+      # point from there -- a $LOAD_PATH-based run against the working tree (every other spec)
+      # cannot catch a packaging defect like a gemspec `files` list missing a data file.
+      - name: Packaging smoke test
+        run: bundle exec rspec spec/packaging_spec.rb
