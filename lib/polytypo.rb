@@ -9,8 +9,8 @@ require_relative "polytypo/modes/spans"
 require_relative "polytypo/modes/runner"
 require_relative "polytypo/modes/html"
 
-# polytypo is locale-correct microtypography: quotes, dashes, ellipses, apostrophes, symbols and
-# no-break spaces, from a spec shared across every polytypo runtime
+# polytypo normalizes typography across languages: locale-correct quotes, dashes, ellipses,
+# apostrophes, symbols and no-break spaces, from a spec shared across every polytypo runtime
 # (github.com/polytypo/polytypo). See spec/CONFORMANCE.md there for exactly what this runtime
 # implements.
 module Polytypo

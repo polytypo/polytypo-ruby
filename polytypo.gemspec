@@ -8,8 +8,8 @@ Gem::Specification.new do |spec|
   spec.authors = ["Iurii Rogulia"]
   spec.email = ["iurii@rogulia.fi"]
 
-  spec.summary = "Locale-correct microtypography: quotes, dashes, ellipses, apostrophes, symbols and no-break spaces"
-  spec.description = "polytypo is a locale-correct microtypography engine -- quotes, dashes, " \
+  spec.summary = "Normalize typography: quotes, dashes, ellipses, apostrophes, symbols and no-break spaces"
+  spec.description = "polytypo normalizes typography across languages -- quotes, dashes, " \
                       "ellipses, apostrophes, symbols and no-break spaces -- driven by a spec " \
                       "shared across every polytypo runtime (github.com/polytypo/polytypo)."
   spec.homepage = "https://polytypo.dev/"
