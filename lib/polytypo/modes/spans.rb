@@ -16,8 +16,13 @@ module Polytypo
       # code-point indices for a UTF-8 String, no separate byte/char distinction to manage here.
       Span = Struct.new(:start, :end)
 
-      # A span's extent in the concatenated code-point array: s0/s1 of modes.md 3.4.
+      # A span's extent in the concatenated code-point array: s0/s1 of modes.md 3.4. `:first`
+      # deliberately shadows Struct#first with the equivalent one-argument-less accessor -- this
+      # struct is never called with an integer argument the way Struct#first(n) would expect, and
+      # `first`/`last` match every other port's SpanRange naming exactly.
+      # rubocop:disable Lint/StructNewOverride
       SpanRange = Struct.new(:first, :last)
+      # rubocop:enable Lint/StructNewOverride
 
       def self.gap_is_line_boundary?(cp, from, to)
         (from...to).any? { |i| LINE_TERMINATORS.include?(cp[i]) }

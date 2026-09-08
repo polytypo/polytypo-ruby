@@ -31,8 +31,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "commonmarker", "~> 2.0"
-
-  spec.add_development_dependency "prop_check", "~> 1.0"
-  spec.add_development_dependency "rspec", "~> 3.13"
-  spec.add_development_dependency "rubocop", "~> 1.81"
+  # Development dependencies live in the Gemfile, not here (Gemspec/DevelopmentDependencies):
+  # a gemspec's dependencies ship as metadata with every install, while dev-only tooling like
+  # rspec/rubocop belongs only to this repository's own Bundler group.
 end

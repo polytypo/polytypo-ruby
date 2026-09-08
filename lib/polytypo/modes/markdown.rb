@@ -92,7 +92,7 @@ module Polytypo
       def self.build_line_starts(chars)
         starts = [0]
         chars.each_with_index do |ch, i|
-          starts << i + 1 if ch == "\n"
+          starts << (i + 1) if ch == "\n"
         end
         starts
       end

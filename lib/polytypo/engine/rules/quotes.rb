@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
 require_relative "quote_ambiguity"
 require_relative "../sentinels"
 require_relative "../unicode_util"
@@ -214,7 +213,7 @@ module Polytypo
         # vacuous? is quotes.md 3.3 vacuous(a, b). Vacuously true when b = a + 1 (Ruby's Range#all?
         # on the empty range (a+1...a+1) is true, matching the spec directly).
         def self.vacuous?(cp, a, b)
-          (a + 1...b).all? { |k| QuoteAmbiguity.inline_space?(cp[k]) }
+          ((a + 1)...b).all? { |k| QuoteAmbiguity.inline_space?(cp[k]) }
         end
 
         # pair_candidates is pass 2 (quotes.md 3.3) -- pair the candidates, one stack per width.

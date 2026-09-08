@@ -224,7 +224,7 @@ module Polytypo
           claims[index] = Edit.new(index, index, [target], "nbsp")
         end
 
-        def self.match_exact(cp, a, w)
+        def self.match_exact?(cp, a, w)
           return false if a + w.length > cp.length
 
           w.each_with_index { |want, j| return false if cp[a + j] != want }
@@ -234,7 +234,7 @@ module Polytypo
         # nbsp.md 3.5 step 1: exact except that the pattern's first code point may also match
         # its Unicode simple uppercase mapping -- a plain code-point-to-code-point table, never
         # a locale-sensitive case operation (ARCHITECTURE.md section 4.4).
-        def self.match_first_char_lenient(cp, a, w)
+        def self.match_first_char_lenient?(cp, a, w)
           return false if w.empty? || a + w.length > cp.length
 
           head = cp[a]
@@ -248,7 +248,7 @@ module Polytypo
         # nbsp.md 3.6 step 1: exact except that a pattern U+0020 also matches an existing
         # U+00A0 or U+202F in the input, so a previously-converted abbreviation still matches
         # on a later run (the idempotency property nbsp.md 5 item 2 requires of N4).
-        def self.match_space_lenient(cp, a, w)
+        def self.match_space_lenient?(cp, a, w)
           return false if a + w.length > cp.length
 
           w.each_with_index do |want, j|
@@ -318,7 +318,7 @@ module Polytypo
           return if prep.short_words.empty?
 
           (0...cp.length).each do |a|
-            w = longest_match(prep.short_words, cp, a, method(:match_first_char_lenient))
+            w = longest_match(prep.short_words, cp, a, method(:match_first_char_lenient?))
             next if w.nil?
 
             k = w.length
@@ -344,7 +344,7 @@ module Polytypo
           return if prep.abbreviations.empty?
 
           (0...cp.length).each do |a|
-            w = longest_match(prep.abbreviations, cp, a, method(:match_space_lenient))
+            w = longest_match(prep.abbreviations, cp, a, method(:match_space_lenient?))
             next if w.nil?
 
             k = w.length
@@ -365,7 +365,7 @@ module Polytypo
           return if prep.units.empty?
 
           (0...cp.length).each do |a|
-            w = longest_match(prep.units, cp, a, method(:match_exact))
+            w = longest_match(prep.units, cp, a, method(:match_exact?))
             next if w.nil?
 
             k = w.length
@@ -391,7 +391,7 @@ module Polytypo
           return if prep.symbols.empty?
 
           (0...cp.length).each do |a|
-            w = longest_match(prep.symbols, cp, a, method(:match_exact))
+            w = longest_match(prep.symbols, cp, a, method(:match_exact?))
             next if w.nil?
 
             k = w.length
@@ -435,7 +435,7 @@ module Polytypo
         # itself immediately preceded by another initial? Used only by "chain" mode's C1, to
         # require Chicago's own "two or more initials" before the space leading into a
         # following non-initial word (a candidate surname) is bound.
-        def self.has_preceding_initial?(cp, prep, p)
+        def self.preceding_initial?(cp, prep, p)
           gap = at(cp, p - 1)
           return false unless gap == SPACE || gap == NBSP
           return false if at(cp, p - 2) != FULL_STOP
@@ -470,7 +470,7 @@ module Polytypo
             c1 = c1_shape &&
                  (mode == "single" ||
                   initial_at?(cp, prep, q + 1) ||
-                  has_preceding_initial?(cp, prep, left_initial_p))
+                  preceding_initial?(cp, prep, left_initial_p))
 
             # C2 -- a word on the left and two consecutive initials on the right
             # ("Пушкин А. С."). Already requires two initials by construction, so it is
@@ -532,7 +532,7 @@ module Polytypo
           return if patterns.empty?
 
           (0...cp.length).each do |a|
-            w = longest_match(patterns, cp, a, method(:match_exact))
+            w = longest_match(patterns, cp, a, method(:match_exact?))
             next if w.nil?
 
             k = w.length

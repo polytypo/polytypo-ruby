@@ -340,7 +340,7 @@ module Polytypo
         return false if cp.negative?
         return (cp >= 0x41 && cp <= 0x5a) || (cp >= 0x61 && cp <= 0x7a) if cp < 0x80
 
-        binary_range_search(LETTER_RANGES, cp)
+        binary_range_search?(LETTER_RANGES, cp)
       end
 
       # True for a code point in Lu or Lt. Binary search over UPPER_RANGES.
@@ -348,7 +348,7 @@ module Polytypo
         return false if cp.negative?
         return cp >= 0x41 && cp <= 0x5a if cp < 0x80
 
-        binary_range_search(UPPER_RANGES, cp)
+        binary_range_search?(UPPER_RANGES, cp)
       end
 
       # Simple uppercase mapping of one code point, or the code point itself when it has none.
@@ -367,7 +367,7 @@ module Polytypo
         cp
       end
 
-      def self.binary_range_search(ranges, cp)
+      def self.binary_range_search?(ranges, cp)
         lo = 0
         hi = (ranges.length / 2) - 1
         while lo <= hi
@@ -384,7 +384,7 @@ module Polytypo
         end
         false
       end
-      private_class_method :binary_range_search
+      private_class_method :binary_range_search?
     end
   end
 end

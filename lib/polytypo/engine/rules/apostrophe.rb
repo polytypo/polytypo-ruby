@@ -62,10 +62,10 @@ module Polytypo
           digit?(cp) || UnicodeUtil.letter?(cp)
         end
 
-        # is_apostrophe? is the case ladder of apostrophe.md 3.3, first match wins. Every verdict
+        # apostrophe? is the case ladder of apostrophe.md 3.3, first match wins. Every verdict
         # is a pure function of exactly two neighbouring code points; there is no lookahead and no
         # state carried between candidates.
-        def self.is_apostrophe?(left, right)
+        def self.apostrophe?(left, right)
           # Case 1 -- prime guard, first so it wins over case 3: `6' 2"`, `55° 40' N`, `6'2"`. A
           # foot mark is not an apostrophe.
           return false if digit?(left) && !UnicodeUtil.letter?(right)
@@ -109,7 +109,7 @@ module Polytypo
 
             left = QuoteAmbiguity.at(cp, i - 1)
             right = QuoteAmbiguity.at(cp, i + 1)
-            next unless is_apostrophe?(left, right)
+            next unless apostrophe?(left, right)
 
             edits << Engine::Edit.new(i, i + 1, [RIGHT_SINGLE], "apostrophe")
           end

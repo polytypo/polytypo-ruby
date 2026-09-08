@@ -126,7 +126,7 @@ module Polytypo
 
         raise Polytypo::Error.new(
           Polytypo::CODE_UNKNOWN_LOCALE,
-          "unknown locale #{tag.inspect}. Known locales: #{registry["locales"].join(", ")}."
+          "unknown locale #{tag.inspect}. Known locales: #{registry['locales'].join(', ')}."
         )
       end
 

@@ -20,7 +20,7 @@ require "json"
 require "uri"
 
 CANONICAL_REPO = "polytypo/polytypo"
-STRICT_SEMVER = /\A(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\z/.freeze
+STRICT_SEMVER = /\A(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\z/
 
 def fail_with(message)
   puts "::error::#{message}"

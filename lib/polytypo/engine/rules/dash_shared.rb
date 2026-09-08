@@ -168,7 +168,7 @@ module Polytypo
         def cluster_inert?(cp, s, e)
           n = cp.length
           start = s
-          start -= 1 while start > 0 && cluster_member?(cp[start - 1])
+          start -= 1 while start.positive? && cluster_member?(cp[start - 1])
           stop = e
           stop += 1 while stop < n && cluster_member?(cp[stop])
 
@@ -217,7 +217,7 @@ module Polytypo
 
           if left >= 0 && left < n && digit?(cp[left])
             d = left
-            d -= 1 while d > 0 && digit?(cp[d - 1])
+            d -= 1 while d.positive? && digit?(cp[d - 1])
             i1 = effective_index(cp, d - 1, -1)
             one = i1.nil? ? Polytypo::Engine::NONE : cp[i1]
             two = i1.nil? ? Polytypo::Engine::NONE : effective_neighbour(cp, i1 - 1, -1)
