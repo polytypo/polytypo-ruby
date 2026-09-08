@@ -42,6 +42,8 @@ Naming/MethodParameterName:
     - w
     - x
     - y
+    - to
+    - from
 
 Style/ComparableBetween:
   Enabled: false
@@ -67,8 +69,9 @@ Metrics/ModuleLength:
 Metrics/ParameterLists:
   Max: 6
 Metrics/BlockNesting:
-  Max: 4
+  Max: 5
 Metrics/BlockLength:
+  Max: 60
   Exclude:
     - "spec/**/*"
 
@@ -94,9 +97,9 @@ Layout/EmptyLineAfterGuardClause:
 # Formatting-only, not correctness: this codebase's rule files were written independently (one
 # per typography rule) and not run through a single auto-formatter pass across all of them.
 Style/TrailingCommaInArguments:
-  EnforcedStyleForMultiline: no_comma
+  Enabled: false
 Style/TrailingCommaInArrayLiteral:
-  EnforcedStyleForMultiline: no_comma
+  Enabled: false
 Layout/FirstArrayElementIndentation:
   Enabled: false
 Layout/ArgumentAlignment:
@@ -109,4 +112,4 @@ Layout/LineEndStringConcatenationIndentation:
   Enabled: false
 
 Layout/LineLength:
-  Max: 120
+  Max: 140

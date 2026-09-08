@@ -17,7 +17,7 @@ RSpec.describe "conformance fixtures" do
     locale = data["locale"]
 
     data["cases"].each do |c|
-      it "#{File.basename(path)}::#{c['id']}" do
+      it "#{File.basename(path)}::#{c["id"]}" do
         if c["dialect"] == "mdx"
           skip "mdx dialect is not supported by this runtime (POLYTYPO_INVALID_DIALECT) -- " \
                "an accepted, narrower conformance claim; see spec/CONFORMANCE.md"
