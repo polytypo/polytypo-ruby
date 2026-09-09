@@ -17,9 +17,10 @@ module Polytypo
       # replacing one code point; the rule never inserts, never deletes, and never touches U+2019
       # itself.
       #
-      # As of spec 0.5.0 this rule additionally skips a small, precisely-defined set of positions
-      # entirely (apostrophe.md 3.4) -- the shared ambiguous-medial-span preserve set,
-      # QuoteAmbiguity.compute_preserve_indices -- rather than applying its case ladder to them.
+      # As of spec 1.1.0 this rule reads no locale data and skips no position (apostrophe.md
+      # 3.4). Spec 0.5.0's preserve set existed to stop the case ladder from converting the marks
+      # quotes had vetoed; conversion is now the specified outcome for exactly those marks --
+      # cases 4 and 3 are what turn `rock 'n' roll` into `rock ’n’ roll`, in every locale.
       module Apostrophe
         SQ = 0x27
         RIGHT_SINGLE = 0x2019
@@ -92,20 +93,12 @@ module Polytypo
           false
         end
 
-        def self.scan(cp, locale_data, _ctx)
+        def self.scan(cp, _locale_data, _ctx)
           n = cp.length
-          # apostrophe.md 3.4, spec 0.5.0: positions in the shared ambiguous-medial-span preserve
-          # set (an ambiguous shape with no cited elisionIdioms match) are skipped entirely,
-          # before left/right are even read -- this rule's own case ladder would otherwise curl
-          # both marks of e.g. `rock 'n' roll` independently and silently defeat quotes'
-          # deliberate veto.
-          idioms = (locale_data["quotes"] || {})["elisionIdioms"] || []
-          preserve = QuoteAmbiguity.compute_preserve_indices(cp, idioms)
 
           edits = []
           (0...n).each do |i|
             next unless cp[i] == SQ
-            next if preserve.key?(i)
 
             left = QuoteAmbiguity.at(cp, i - 1)
             right = QuoteAmbiguity.at(cp, i + 1)
