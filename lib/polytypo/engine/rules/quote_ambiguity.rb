@@ -218,7 +218,6 @@ module Polytypo
 
           ambiguous
         end
-
       end
     end
   end
