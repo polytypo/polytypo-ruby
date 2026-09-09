@@ -26,23 +26,23 @@ module Polytypo
       # the right one as a trailing possessive/elision, apostrophe.md 3.3 cases 3/4) must not
       # convert them either.
       module QuoteAmbiguity
-        # STRAIGHT_APOSTROPHE is the GENERAL ambiguous-shape veto's own trigger glyph -- U+0027
-        # only. An already-curly U+2018/U+2019 pair is out of this predicate's scope by
-        # construction.
-        STRAIGHT_APOSTROPHE = 0x27
+        # LOWER_N / UPPER_N -- quotes.md 3.2's one enclosed code point, in either case.
+        LOWER_N = 0x6E
+        UPPER_N = 0x4E
 
-        # NARROW -- quotes.md 3.1 NARROW -- every glyph an elision idiom's marks may appear as
-        # across pipeline passes (straight, or already curled by an earlier pass). Shared with
-        # quotes.rb so the two rules cannot define two slightly different NARROW sets.
+        # NARROW -- quotes.md 3.1 NARROW -- every glyph an elision mark may appear as across
+        # pipeline passes (straight, or already curled by an earlier pass). Shared with quotes.rb
+        # so the two rules cannot define two slightly different NARROW sets. For the universal
+        # medial-n veto, matching the whole class is an IDEMPOTENCY obligation rather than a
+        # preference: its marks are converted to U+2019 by apostrophe, so a straight-ASCII-only
+        # predicate would not recognise its own output and pass 2 would pair `rock ’n’ roll`
+        # as an ordinary NARROW quotation on the next run.
         NARROW = [0x27, 0x2018, 0x2019, 0x201A, 0x201B, 0x2039, 0x203A].freeze
 
         # INLINE_SPACE -- quotes.md 3.1 INLINE-SPACE, deliberately excluding BREAK/MARKER/
         # LINE_MARKER so this shape never crosses a line or span boundary (modes.md 3.3) -- the
         # same anchor the elisionIdioms matcher already uses.
         INLINE_SPACE = [0x20, 0x09, 0xA0, 0x202F, 0x2007, 0x2009, 0x200A].freeze
-
-        MIN_ENCLOSED = 1
-        MAX_ENCLOSED = 3
 
         def self.narrow?(cp)
           NARROW.include?(cp)
@@ -187,28 +187,27 @@ module Polytypo
 
         # compute_ambiguous_shape_indices is the general ambiguous-medial-span shape,
         # locale-independent (quotes.md 3.2, spec 0.5.0): a pair of straight ASCII single quotes
-        # (U+0027 only) enclosing 1-3 LETTER code points, with at least one INLINE-SPACE code
-        # point immediately outside each mark. Both mark positions are returned for every match.
-        # A superset of compute_idiom_matched_indices's output whenever an idiom's elided field
-        # is itself 1-3 letters (true of every idiom shipped so far), but computed independently
-        # rather than assumed, since a future idiom's elided field is not required to be that
-        # short.
+        # (spec 1.1.0) a pair of NARROW marks enclosing exactly one code point, U+006E or
+        # U+004E, with at least one INLINE-SPACE code point immediately outside each mark. Both
+        # mark positions are returned for every match. A superset of
+        # compute_idiom_matched_indices's output for every idiom whose elided field is a single
+        # n (true of every idiom shipped so far), but computed independently rather than assumed,
+        # since a future idiom's elided field is not required to be that short.
         def self.compute_ambiguous_shape_indices(cp)
           ambiguous = {}
           n = cp.length
 
           (0...n).each do |i|
-            next unless at(cp, i) == STRAIGHT_APOSTROPHE
+            next unless narrow?(at(cp, i))
 
             l_lit = at(cp, i - 1)
             next if l_lit == Engine::NONE || !inline_space?(l_lit)
 
-            k = 0
-            k += 1 while k < MAX_ENCLOSED && UnicodeUtil.letter?(at(cp, i + 1 + k))
-            next if k < MIN_ENCLOSED
+            enclosed = at(cp, i + 1)
+            next unless [LOWER_N, UPPER_N].include?(enclosed)
 
-            j = i + 1 + k
-            next unless at(cp, j) == STRAIGHT_APOSTROPHE
+            j = i + 2
+            next unless narrow?(at(cp, j))
 
             r_lit = at(cp, j + 1)
             next if r_lit == Engine::NONE || !inline_space?(r_lit)
@@ -218,22 +217,6 @@ module Polytypo
           end
 
           ambiguous
-        end
-
-        # compute_preserve_indices is the set of straight-ASCII-quote index positions
-        # apostrophe.md 3.4 requires `apostrophe` to skip byte-identically: ambiguous-shaped, but
-        # with no matching cited idiom. A position with a matching idiom is not in this set --
-        # apostrophe's ordinary case ladder still curls it, exactly as spec 0.4.0-0.4.1 did.
-        def self.compute_preserve_indices(cp, idioms)
-          ambiguous = compute_ambiguous_shape_indices(cp)
-          return ambiguous if ambiguous.empty?
-
-          idiom_matched = compute_idiom_matched_indices(cp, idioms)
-          return ambiguous if idiom_matched.empty?
-
-          ambiguous.each_with_object({}) do |(idx, _), preserve|
-            preserve[idx] = true unless idiom_matched.key?(idx)
-          end
         end
       end
     end
