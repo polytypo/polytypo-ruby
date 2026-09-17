@@ -9,7 +9,7 @@ require_relative "../registry"
 module Polytypo
   module Engine
     module Rules
-      # spec/rules/apostrophe.md (spec 0.5.0), order 50.
+      # spec/rules/apostrophe.md (spec 1.2.0), order 50.
       #
       # Converts a straight U+0027 to U+2019 where it is genuinely an apostrophe: a contraction,
       # an elision, a possessive, or a decade elision. Runs immediately after `quotes` (order 40)
@@ -47,6 +47,10 @@ module Polytypo
           0x2D, 0x2011, 0x2013, 0x2014
         ].freeze
 
+        # OPENQUOTE is apostrophe.md 3.1 OPENQUOTE (spec 1.2.0): the quotation glyphs of OPENISH,
+        # without its brackets, its dashes and Engine::MARKER. Read only by case 3a.
+        OPENQUOTE = [0xAB, 0x2018, 0x201A, 0x201B, 0x201C, 0x201E, 0x201F, 0x2039].freeze
+
         BREAK = [0x0A, 0x0D, 0x0B, 0x0C, 0x85, 0x2028, 0x2029, Engine::LINE_MARKER].freeze
 
         # SPACELIKE, including Engine::LINE_MARKER as a member of BREAK for every rule everywhere
@@ -80,6 +84,11 @@ module Polytypo
              (right == Engine::NONE || spacelike?(right) || CLOSEISH.include?(right))
             return true
           end
+
+          # Case 3a (spec 1.2.0) -- elision before a quotation: `d'« urine »`, `l'“idea”`. Case 3
+          # misses it because an opening quotation glyph is not in CLOSEISH; `f'(x)` stays straight
+          # because a bracket is not in OPENQUOTE.
+          return true if UnicodeUtil.letter?(left) && OPENQUOTE.include?(right)
 
           # Case 4 -- leading elision: `'90s`, `'tis`, `'em`, `'n'` (the leading mark). The
           # replacement is U+2019, never U+2018 -- a leading elision is a raised comma, not an
