@@ -9,7 +9,7 @@ require_relative "../../errors"
 module Polytypo
   module Engine
     module Rules
-      # `nbsp` -- spec/rules/nbsp.md (spec 0.6.0), order 70 (last).
+      # `nbsp` -- spec/rules/nbsp.md (spec 1.2.0), order 70 (last).
       #
       # Ten sub-rules, N1 through N10, evaluated in that fixed order (3.2); each produces
       # candidate edits keyed by the index of the space (or insertion point) it claims, and the
@@ -54,16 +54,7 @@ module Polytypo
         end
 
         # BREAK (nbsp.md 3.1), including LINE_MARKER -- a member of BREAK for every rule,
-        # everywhere (modes.md 3.2).
-        #
-        # MARKER is deliberately NOT a member here, and openish?/closeish? below do not add it
-        # either. modes.md 3.3's table says nbsp's OPENISH/CLOSEISH include the span-boundary
-        # MARKER, the same way quotes' and apostrophe's do -- but the JS reference
-        # implementation's own isBreak/isOpenish/isCloseish never test for MARKER, only
-        # LINE_MARKER via isBreak. That is a documented, preserved discrepancy (tracked, not
-        # resolved, in the roadmap), carried forward here unchanged rather than "corrected"
-        # against the table, for cross-runtime consistency with the already-shipped JS, Python
-        # and Go ports.
+        # everywhere (modes.md 3.2). MARKER is not a member of BREAK; see closeish? below.
         def self.break?(cp)
           cp == 0x0A || cp == 0x0D || cp == 0x0B || cp == 0x0C || cp == 0x85 ||
             cp == 0x2028 || cp == 0x2029 || cp == LINE_MARKER
@@ -197,13 +188,19 @@ module Polytypo
         end
 
         # OPENISH / CLOSEISH (nbsp.md 3.1): the ASCII brackets plus every locale quote glyph.
-        # See break?'s comment for why MARKER is not a member here.
+        #
+        # Since spec 1.2.0 the span boundary MARKER is a member of CLOSEISH and not of OPENISH
+        # (nbsp.md 3.1 and 7 item 12, modes.md 3.3). CLOSEISH is read only by N1/N2's right-context
+        # guard, where membership lets French `<strong>gel :</strong>` keep its no-break space
+        # after `spaces` deletes the U+0020. OPENISH stays marker-free: with the marker in it,
+        # N1/N2's quote-glyph guard would decline `<em>non</em> ! Oui`, and the left-boundary
+        # tests of N3, N7, N9, N10 would widen at span edges.
         def self.openish?(prep, cp)
           prep.opens.include?(cp)
         end
 
         def self.closeish?(prep, cp)
-          prep.closes.include?(cp)
+          cp == MARKER || prep.closes.include?(cp)
         end
 
         def self.mark?(prep, cp)

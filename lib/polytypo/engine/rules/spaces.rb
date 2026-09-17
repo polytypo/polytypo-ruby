@@ -107,10 +107,17 @@ module Polytypo
         # after any edit had been applied would break the Chicago spaced ellipsis
         # "Hello . . .", where every dot is a lone dot at decision time and all three spaces
         # must still strip.
+        #
+        # Spec 1.2.0's word-start clause: a single dot directly followed by a letter or an ASCII
+        # digit starts a token (".NET", ".env", ".5"), so "Use .NET" keeps its space. A span
+        # boundary marker after the dot is neither, so "a .</em>" still strips.
         def self.lone_dot?(cp, e)
           return true if at(cp, e) != FULL_STOP
 
-          !dotlike?(at(cp, e + 1))
+          after = at(cp, e + 1)
+          return false if UnicodeUtil.letter?(after) || digit_ascii?(after)
+
+          !dotlike?(after)
         end
 
         def self.digit_ascii?(value)
