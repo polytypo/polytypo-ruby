@@ -76,6 +76,22 @@ pipeline only. A single `Polytypo.transform` module method (not separate
 `require` already gets you the same dependency isolation JS/Python's subpath split exists for,
 without a separate namespace per mode.
 
+`Polytypo.analyze` runs the same pipeline and reports what it would do instead of doing it — one
+record per edit, each with the rule that made it and code-point offsets into the input you passed
+(into the **document**, in `html` and `markdown` mode, not into a span):
+
+```ruby
+Polytypo.analyze(%q{Wait... "really"?}, locale: "en-US")
+# => [#<data Polytypo::Change rule_id="ellipsis", start=4, end=7, before="...", after="…">,
+#     #<data Polytypo::Change rule_id="quotes", start=8, end=9, before="\"", after="“">, ...]
+```
+
+It is a report, not a patch. The list is empty exactly when `Polytypo.transform` would return the
+input unchanged, and every `rule_id` is a rule that was enabled for that call — but two rules may
+touch the same original range (French `spaces` deletes the space before `:` and `nbsp` puts a
+no-break one back), so replaying the list is not guaranteed to reproduce the output. Call
+`Polytypo.transform` for the text. Full contract: `spec/rules/analyze.md`.
+
 ### Errors
 
 Every error `Polytypo.transform` raises is a `Polytypo::Error` carrying one of seven stable

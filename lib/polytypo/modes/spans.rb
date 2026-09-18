@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "../engine/origin"
 require_relative "../engine/sentinels"
 require_relative "../errors"
 
@@ -66,6 +67,19 @@ module Polytypo
           previous = span
         end
         cp
+      end
+
+      # The origin map for concatenate_spans (analyze.md section 2): for every code point of the
+      # joined array, the code-point offset of the character it came from IN THE DOCUMENT, and
+      # NO_ORIGIN for the markers, which came from nowhere. A Span's bounds are already
+      # code-point offsets, so no coordinate conversion belongs here.
+      def self.origin_of_spans(spans)
+        origin = []
+        spans.each_with_index do |span, i|
+          origin << Engine::Origin::NO_ORIGIN unless i.zero?
+          origin.concat((span.start...span.end).to_a)
+        end
+        origin
       end
 
       # The span extents of the array as it stands. Recomputed after every rule, because applying

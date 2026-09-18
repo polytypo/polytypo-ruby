@@ -2,6 +2,7 @@
 
 require_relative "edits"
 require_relative "locale"
+require_relative "origin"
 require_relative "registry"
 require_relative "../errors"
 
@@ -55,6 +56,28 @@ module Polytypo
           current = Edits.apply_edits(current, edits, rule_id)
         end
         current
+      end
+
+      # run_rules, keeping the edits instead of discarding them (analyze.md section 1: same
+      # pipeline, same order, reporting rather than applying). The origin map travels alongside
+      # the array so every change comes back in input coordinates, and +filter_edits+ is the hook
+      # the span-runner needs for modes.md 3.4's boundary filters, passed as a block -- text mode
+      # passes none and gets the identity.
+      def self.run_rules_recording(cp, plan, locale_data, ctx, origin, input_length)
+        current = cp
+        current_origin = origin
+        changes = []
+        plan.each do |rule_id|
+          fn = Registry.rule(rule_id)
+          produced = fn.call(current, locale_data, ctx)
+          edits = block_given? ? yield(current, produced) : produced
+          next if edits.empty?
+
+          changes.concat(Origin.record_changes(current, edits, current_origin, input_length, rule_id))
+          current_origin = Origin.apply_edits_to_origin(current_origin, edits)
+          current = Edits.apply_edits(current, edits, rule_id)
+        end
+        changes
       end
     end
   end
