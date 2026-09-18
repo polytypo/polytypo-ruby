@@ -3,6 +3,7 @@
 require_relative "polytypo/version"
 require_relative "polytypo/errors"
 require_relative "polytypo/engine/codepoints"
+require_relative "polytypo/engine/origin"
 require_relative "polytypo/engine/pipeline"
 require_relative "polytypo/engine/rules" # side effect: registers all 9 rules
 require_relative "polytypo/modes/spans"
@@ -43,6 +44,37 @@ module Polytypo
       transform_html(input, locale, rules)
     else # "markdown"
       transform_markdown(input, locale, dialect, rules)
+    end
+  end
+
+  # Runs the same pipeline as .transform and reports what it would do instead of doing it
+  # (spec/rules/analyze.md), returning an Array of Polytypo::Engine::Change. Offsets are
+  # code-point offsets into +input+ in every mode -- into the document, in "html" and "markdown"
+  # mode, not into a span.
+  #
+  # What it guarantees: the list is empty exactly when .transform would return the input
+  # unchanged, every +rule_id+ was enabled for the call, and every offset is inside the input.
+  # What it does not: the list is a report, not a patch -- two rules may touch the same original
+  # range, so replaying it is not guaranteed to reproduce .transform's output. Call .transform
+  # for the text (analyze.md sections 4 and 5).
+  #
+  # Pure and thread-safe on the same terms as .transform.
+  def self.analyze(input, locale:, mode: "text", dialect: nil, rules: nil)
+    resolved_mode = resolve_mode(mode)
+
+    case resolved_mode
+    when "text"
+      if dialect
+        raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
+      end
+      analyze_text(input, locale, rules)
+    when "html"
+      if dialect
+        raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
+      end
+      analyze_html(input, locale, rules)
+    else # "markdown"
+      analyze_markdown(input, locale, dialect, rules)
     end
   end
 
@@ -88,4 +120,32 @@ module Polytypo
     Modes::Runner.run_over_spans(cp, spans, plan, locale_data, ctx)
   end
   private_class_method :transform_markdown
+
+  def self.analyze_text(input, locale, rules)
+    _resolved, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
+    cp = Engine::Codepoints.to_codepoints(input)
+    ctx = Engine::RuleContext.new(mode: "text", dialect: nil, locale: locale)
+    Engine::Pipeline.run_rules_recording(cp, plan, locale_data, ctx, (0...cp.length).to_a, cp.length)
+  end
+  private_class_method :analyze_text
+
+  def self.analyze_html(input, locale, rules)
+    resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
+    spans = Modes::Html.html_spans(input)
+    ctx = Engine::RuleContext.new(mode: "html", dialect: nil, locale: resolved_locale)
+    Modes::Runner.analyze_over_spans(Engine::Codepoints.to_codepoints(input), spans, plan, locale_data, ctx)
+  end
+  private_class_method :analyze_html
+
+  def self.analyze_markdown(input, locale, dialect, rules)
+    # Validation order is public, tested behaviour and is shared with .transform: rules, then
+    # locale, then dialect/parsing (analyze.md section 4, A1).
+    resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
+    require_relative "polytypo/modes/markdown"
+    Modes::Markdown.resolve_dialect(dialect)
+    spans = Modes::Markdown.markdown_spans(input)
+    ctx = Engine::RuleContext.new(mode: "markdown", dialect: dialect, locale: resolved_locale)
+    Modes::Runner.analyze_over_spans(Engine::Codepoints.to_codepoints(input), spans, plan, locale_data, ctx)
+  end
+  private_class_method :analyze_markdown
 end

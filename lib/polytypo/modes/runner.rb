@@ -2,6 +2,7 @@
 
 require_relative "spans"
 require_relative "../engine/edits"
+require_relative "../engine/pipeline"
 require_relative "../engine/registry"
 
 module Polytypo
@@ -51,6 +52,22 @@ module Polytypo
         end
         out.concat(source_cp[cursor..])
         out.pack("U*")
+      end
+
+      # run_over_spans, reporting instead of applying (analyze.md section 1). The span table
+      # supplies the origin map, so every change comes back in DOCUMENT coordinates -- analyze.md
+      # section 6 names a runtime that reports span-local offsets here as the mistake that passes
+      # every text-mode test.
+      def self.analyze_over_spans(source_cp, spans, plan, locale_data, ctx)
+        normalized = Spans.normalize_spans(spans)
+        return [] if normalized.empty?
+
+        Engine::Pipeline.run_rules_recording(
+          Spans.concatenate_spans(source_cp, normalized),
+          plan, locale_data, ctx,
+          Spans.origin_of_spans(normalized),
+          source_cp.length
+        ) { |current, edits| Spans.filter_boundary_edits(current, edits, Spans.span_ranges_of(current)) }
       end
     end
   end
