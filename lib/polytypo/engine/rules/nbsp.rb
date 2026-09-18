@@ -34,9 +34,33 @@ module Polytypo
         SQUARE_CLOSE = 0x5D
         BRACE_CLOSE = 0x7D
 
+        SEMICOLON = 0x3B
+        AMPERSAND = 0x26
+        HASH = 0x23
+        # The longest HTML named reference is 31 code points ("CounterClockwiseContourIntegral").
+        MAX_CHARACTER_REFERENCE_NAME = 32
+
         EN_DASH = 0x2013
         EM_DASH = 0x2014
         ELLIPSIS = 0x2026
+
+        # nbsp.md 3.3 step 4: do the code points left of this ";" have the shape of a character
+        # reference? A bounded left walk over ASCII alphanumerics, optionally one "#", then "&".
+        # Shape, not the HTML named-reference table -- declining on "&notaname;" costs nothing,
+        # and no runtime carries thousands of entries for it.
+        def self.ends_character_reference?(cp, index)
+          j = index - 1
+          j -= 1 while j >= 0 && ascii_alnum?(cp[j])
+          length = index - 1 - j
+          return false if length < 1 || length > MAX_CHARACTER_REFERENCE_NAME
+
+          j -= 1 if j >= 0 && cp[j] == HASH
+          j >= 0 && cp[j] == AMPERSAND
+        end
+
+        def self.ascii_alnum?(cp)
+          (cp >= 0x30 && cp <= 0x39) || (cp >= 0x41 && cp <= 0x5A) || (cp >= 0x61 && cp <= 0x7A)
+        end
 
         # cp[i], or NONE if i is out of bounds -- the spec's own boundary value.
         def self.at(cp, i)
@@ -295,7 +319,12 @@ module Polytypo
             next if openish?(prep, left)
             next if left != NONE && space_like?(left) && openish?(prep, at(cp, i - 2))
 
-            # Step 4.
+            # Step 4 (spec 1.3.0) -- character-reference guard. text mode has no markup concept,
+            # so a locale listing ";" used to insert before the ";" that *ends* a reference and
+            # "Bonjour&#160;: oui" stopped being what it was (nbsp.md 3.3 step 4).
+            next if cp[i] == SEMICOLON && ends_character_reference?(cp, i)
+
+            # Step 5.
             next if left == target
 
             if left == SPACE || left == other
