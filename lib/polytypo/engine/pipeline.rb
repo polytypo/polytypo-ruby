@@ -9,7 +9,27 @@ require_relative "../errors"
 module Polytypo
   module Engine
     # Per-call context every rule reads, alongside the code-point array and the locale data.
-    RuleContext = Struct.new(:mode, :dialect, :locale, keyword_init: true)
+    # :narrow_target is nbsp.md 3.1a's NARROW-TARGET, already resolved to a code point: U+202F
+    # by default, U+00A0 when the caller passed narrow_nbsp: "nbsp". A rule reads a code point
+    # and never the option, so the string never reaches the pipeline.
+    RuleContext = Struct.new(:mode, :dialect, :locale, :narrow_target, keyword_init: true)
+
+    # nbsp.md 3.1a: resolve the narrow_nbsp option to the code point the rule writes. Checked
+    # immediately after mode and before rules (ARCHITECTURE.md 7) -- the two checks that read
+    # nothing but the call itself come first -- and it runs whether or not `nbsp` is enabled, so
+    # a misspelled value still raises rather than being silently ignored.
+    NARROW_NO_BREAK_SPACE = 0x202F
+    NO_BREAK_SPACE = 0x00A0
+
+    def self.resolve_narrow_target(value)
+      return NARROW_NO_BREAK_SPACE if value.nil? || value == "narrow"
+      return NO_BREAK_SPACE if value == "nbsp"
+
+      raise Polytypo::Error.new(
+        Polytypo::CODE_INVALID_OPTION,
+        "Unknown narrow_nbsp #{value.inspect}. Expected \"narrow\" or \"nbsp\".",
+      )
+    end
 
     # Resolves the locale, builds the rule plan, and runs each enabled rule in
     # spec/rules/order.json order over a code-point array, applying its edits before the next
