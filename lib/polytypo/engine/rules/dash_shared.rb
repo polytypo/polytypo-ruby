@@ -98,6 +98,21 @@ module Polytypo
           cp >= DIGIT_ZERO && cp <= DIGIT_NINE
         end
 
+        # ranges.md 3.2a CLOSED-SYMBOL (spec 1.3.0): the symbols conventionally written closed up
+        # to a number. A literal code-point set, never a Unicode category test -- a category makes
+        # the verdict depend on which Unicode version a runtime was built against, and the five
+        # runtimes must agree. The currency part is the U+20A0-U+20CF block by its own bounds, not
+        # the subset assigned in some Unicode version: the assigned subset drifts between
+        # releases, block bounds do not.
+        def closed_up_symbol?(cp)
+          return true if cp == 0x0024
+          return true if cp >= 0x00A2 && cp <= 0x00A5
+          return true if cp >= 0x20A0 && cp <= 0x20CF
+          return true if cp == 0x0025 || cp == 0x2030 || cp == 0x2031
+
+          cp == 0x00B0
+        end
+
         # BREAK, including Engine::LINE_MARKER: a member of BREAK for every rule everywhere
         # (modes.md 3.2).
         def break?(cp)
@@ -207,6 +222,63 @@ module Polytypo
           cp[i]
         end
 
+        # ranges.md 3.2a: a token's flanks after the closed-up-symbol walk, with the digit runs
+        # the guards and the replacement then read. `left`/`right` are L\u2032/R\u2032;
+        # `outer_left`/`outer_right` are the matched outer symbols' indices, or nil.
+        RangeFlanks = Data.define(:left, :right, :a, :b, :outer_left, :outer_right)
+
+        # ranges.md 3.2 and 3.2a -- is this token a range candidate, and where are its digit runs?
+        # nil means it is not one, which is the signal that the token belongs to `dashes`.
+        #
+        # Both sides are decided from the ORIGINAL left/right, simultaneously; a side consumes a
+        # closed-up symbol only when the opposite member repeats the same code point. An unmatched
+        # symbol leaves the flank a non-DIGIT, so "$15-\u20ac20" and "15-$20" are not candidates
+        # and do not change hands.
+        def range_flanks(cp, left, right)
+          n = cp.length
+          inner_right = if right >= 0 && right < n && closed_up_symbol?(cp[right]) &&
+                           right + 1 < n && digit?(cp[right + 1])
+                          cp[right]
+                        end
+          inner_left = if left.positive? && left < n && closed_up_symbol?(cp[left]) &&
+                          digit?(cp[left - 1])
+                         cp[left]
+                       end
+
+          l = inner_left.nil? ? left : left - 1
+          r = inner_right.nil? ? right : right + 1
+          return nil if l.negative? || l >= n || r.negative? || r >= n
+          return nil unless digit?(cp[l]) && digit?(cp[r])
+
+          a = l
+          a -= 1 while a.positive? && digit?(cp[a - 1])
+          b = r
+          b += 1 while b + 1 < n && digit?(cp[b + 1])
+
+          outer_left = nil
+          unless inner_right.nil?
+            outer_left = effective_index(cp, a - 1, -1)
+            return nil if outer_left.nil? || cp[outer_left] != inner_right
+          end
+          outer_right = nil
+          unless inner_left.nil?
+            outer_right = effective_index(cp, b + 1, 1)
+            return nil if outer_right.nil? || cp[outer_right] != inner_left
+          end
+
+          RangeFlanks.new(left: l, right: r, a: a, b: b, outer_left: outer_left,
+                          outer_right: outer_right)
+        end
+
+        # T1's reach is transparent to one CLOSED-SYMBOL on either end of a digit run (spec
+        # 1.3.0): the run it protects may be a range member carrying an outer symbol.
+        def skip_closed_up_symbol(cp, from, step)
+          i = effective_index(cp, from, step)
+          return from if i.nil? || !closed_up_symbol?(cp[i])
+
+          i + step
+        end
+
         # dashes.md 3.2 step 8 (T1) -- the spacing-transition guard. A tight token must not become
         # spaced when doing so would insert a U+0020 between itself and a digit run that has
         # another dash on its far side, read through effective neighbours (3.2b). Shared because a
@@ -215,10 +287,17 @@ module Polytypo
         def spacing_transition_blocked?(cp, left, right)
           n = cp.length
 
+          # Spec 1.3.0, position p1: step over a CLOSED-SYMBOL between the token and the run.
+          left -= 1 if left >= 0 && left < n && closed_up_symbol?(cp[left]) && left.positive? &&
+                       digit?(cp[left - 1])
+          right += 1 if right >= 0 && right < n && closed_up_symbol?(cp[right]) &&
+                        right + 1 < n && digit?(cp[right + 1])
+
           if left >= 0 && left < n && digit?(cp[left])
             d = left
             d -= 1 while d.positive? && digit?(cp[d - 1])
-            i1 = effective_index(cp, d - 1, -1)
+            # Position p2: and over one at the far end of the run.
+            i1 = effective_index(cp, skip_closed_up_symbol(cp, d - 1, -1), -1)
             one = i1.nil? ? Polytypo::Engine::NONE : cp[i1]
             two = i1.nil? ? Polytypo::Engine::NONE : effective_neighbour(cp, i1 - 1, -1)
             return true if dash_union?(one)
@@ -228,7 +307,7 @@ module Polytypo
           if right >= 0 && right < n && digit?(cp[right])
             d = right
             d += 1 while d + 1 < n && digit?(cp[d + 1])
-            i1 = effective_index(cp, d + 1, 1)
+            i1 = effective_index(cp, skip_closed_up_symbol(cp, d + 1, 1), 1)
             one = i1.nil? ? Polytypo::Engine::NONE : cp[i1]
             two = i1.nil? ? Polytypo::Engine::NONE : effective_neighbour(cp, i1 + 1, 1)
             return true if dash_union?(one)
@@ -309,7 +388,10 @@ module Polytypo
             left_cp = cp[left]
             right_cp = cp[right]
 
-            next if crossed_joiner && !(digit?(left_cp) && digit?(right_cp))
+            # dashes.md 3.2a: re-entry across a joiner is only ever a bound range `ranges`
+            # produced on an earlier pass. Spec 1.3.0 reads that condition after the
+            # closed-up-symbol walk, so a bound range carrying symbols re-enters the same way.
+            next if crossed_joiner && range_flanks(cp, left, right).nil?
             next if break?(left_cp) || break?(right_cp)
 
             # dashes.md 3.2 step 6 -- isolation guard.

@@ -38,17 +38,19 @@ module Polytypo
           true
         end
 
-        # ranges.md 3.3, G1-G5. left/right are the token's post-joiner-walk flank indices (both
-        # already known to be DIGIT by the caller).
-        def guards_pass?(cp, left, right)
-          n = cp.length
-          a = left
-          a -= 1 while a.positive? && DashShared.digit?(cp[a - 1])
-          b = right
-          b += 1 while b + 1 < n && DashShared.digit?(cp[b + 1])
+        # ranges.md 3.2, G1-G5, over the flanks and digit runs 3.2a's walk produced. before/after
+        # read past a matched outer closed-up symbol, so G1-G3 judge the text in front of the
+        # whole member rather than the symbol itself -- which is what declines "US$15-$20" on G1.
+        def guards_pass?(cp, flanks)
+          left = flanks.left
+          right = flanks.right
+          a = flanks.a
+          b = flanks.b
 
-          before = DashShared.effective_neighbour(cp, a - 1, -1)
-          after = DashShared.effective_neighbour(cp, b + 1, 1)
+          before_from = flanks.outer_left || a
+          after_from = flanks.outer_right || b
+          before = DashShared.effective_neighbour(cp, before_from - 1, -1)
+          after = DashShared.effective_neighbour(cp, after_from + 1, 1)
 
           # G1 -- no letter adjacency.
           return false if Polytypo::Engine::UnicodeUtil.letter?(before)
@@ -78,13 +80,13 @@ module Polytypo
           style = locale_data["dash"]["range"]
 
           DashShared.find_tokens(cp).each do |token|
-            # ranges.md 3.2 -- a range candidate iff both flanks are DIGIT. `ranges` never
-            # processes any other token shape; that is `dashes`' territory, and `dashes` declines
-            # a digit-flanked token unconditionally too (operator decision, spec 0.5.0) -- neither
-            # rule reinterprets the other's shape, whether or not `ranges` is enabled.
-            next unless DashShared.digit?(token.left_cp) && DashShared.digit?(token.right_cp)
+            # ranges.md 3.2, 3.2a -- a candidate iff both flanks are DIGIT once a matched
+            # closed-up symbol has been walked over. Anything else is `dashes`' territory, and
+            # `dashes` declines a candidate unconditionally too (operator decision, spec 0.5.0).
+            flanks = DashShared.range_flanks(cp, token.left, token.right)
+            next if flanks.nil?
 
-            next unless guards_pass?(cp, token.left, token.right)
+            next unless guards_pass?(cp, flanks)
 
             # "none": the locale has no verified range convention, so nothing is substituted --
             # not a fallback to dash.parenthetical, nothing (ranges.md 2).
@@ -92,12 +94,14 @@ module Polytypo
 
             if DashShared.spaced_style?(style)
               # T1: a tight token may not become spaced across a digit run that has a far dash.
+              # T1/T2 read the walked flanks: ranges.md 3.2a makes cp[L']/cp[R'] what every
+              # shared guard sees once a closed-up symbol has been consumed.
               next if token.lsp.zero? && token.rsp.zero? &&
-                      DashShared.spacing_transition_blocked?(cp, token.left, token.right)
+                      DashShared.spacing_transition_blocked?(cp, flanks.left, flanks.right)
 
               # T2: the emitted U+0020 must not land where `spaces` (order 10) would delete it.
-              next if DashShared.strip_before_or_close_bracket?(token.right_cp)
-              next if DashShared.open_bracket?(token.left_cp)
+              next if DashShared.strip_before_or_close_bracket?(cp[flanks.right])
+              next if DashShared.open_bracket?(cp[flanks.left])
             end
 
             # ranges.md 3.3.1: never make an edit whose entire content is invisible. Try the
