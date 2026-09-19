@@ -133,13 +133,16 @@ RSpec.describe "Polytypo.analyze" do
     end
 
     it "reports document offsets in a later span too" do
-      # Three spans, and the change is in the third: the two markers before it are the only code
-      # points in the joined array with no origin, so a doubled or dropped one shifts this offset
-      # and nothing in a one- or two-span document would notice.
-      input = "<p>one</p><p>two</p><p>Wait... three</p>"
+      # Three spans, a non-ASCII character before the change, and the change in the third span:
+      # the two markers are the only code points in the joined array with no origin, so a doubled
+      # or dropped one shifts this offset and nothing in a one- or two-span document would
+      # notice, and "café" puts the UTF-8 byte offset one ahead of the code-point one, so a byte
+      # offset leaking out of the span adapter cannot pass either.
+      input = "<p>café</p><p>two</p><p>Wait... three</p>"
       first = Polytypo.analyze(input, locale: "en-US", mode: "html").first
       expect(first.rule_id).to eq("ellipsis")
       expect(first.start).to eq(input.index("..."))
+      expect(input[0...input.index("...")].bytesize).to eq(first.start + 1)
     end
 
     it "reports document offsets in markdown mode too" do
