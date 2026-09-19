@@ -72,7 +72,10 @@ module Polytypo
           DashShared.find_tokens(cp).each do |token|
             # A digit-flanked token is `ranges`' territory, never `dashes`' -- declined
             # unconditionally, whether or not `ranges` is enabled (operator decision, spec 0.5.0).
-            next if DashShared.digit?(token.left_cp) && DashShared.digit?(token.right_cp)
+            # A range candidate is `ranges`' territory, never `dashes`'. Since spec 1.3.0 a
+            # candidate may carry a matched closed-up symbol on a flank (ranges.md 3.2a), which
+            # is why this is range_flanks rather than a digit test on both flanks.
+            next unless DashShared.range_flanks(cp, token.left, token.right).nil?
 
             # dashes.md 3.4 P5 -- authored en-dash mark-identity veto (spec 0.6.0). A run
             # consisting of exactly one U+2013 is declined unconditionally: every locale, tight or
