@@ -28,22 +28,23 @@ module Polytypo
   #
   # Only `mode: "text"`/`"html"` ever touch this file's own requires; `mode: "markdown"` lazily
   # requires "commonmarker" from within Modes::Markdown, never at load time of this file.
-  def self.transform(input, locale:, mode: "text", dialect: nil, rules: nil)
+  def self.transform(input, locale:, mode: "text", dialect: nil, rules: nil, narrow_nbsp: nil)
     resolved_mode = resolve_mode(mode)
+    narrow_target = Engine.resolve_narrow_target(narrow_nbsp)
 
     case resolved_mode
     when "text"
       if dialect
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
-      transform_text(input, locale, rules)
+      transform_text(input, locale, rules, narrow_target)
     when "html"
       if dialect
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
-      transform_html(input, locale, rules)
+      transform_html(input, locale, rules, narrow_target)
     else # "markdown"
-      transform_markdown(input, locale, dialect, rules)
+      transform_markdown(input, locale, dialect, rules, narrow_target)
     end
   end
 
@@ -59,22 +60,23 @@ module Polytypo
   # for the text (analyze.md sections 4 and 5).
   #
   # Pure and thread-safe on the same terms as .transform.
-  def self.analyze(input, locale:, mode: "text", dialect: nil, rules: nil)
+  def self.analyze(input, locale:, mode: "text", dialect: nil, rules: nil, narrow_nbsp: nil)
     resolved_mode = resolve_mode(mode)
+    narrow_target = Engine.resolve_narrow_target(narrow_nbsp)
 
     case resolved_mode
     when "text"
       if dialect
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
-      analyze_text(input, locale, rules)
+      analyze_text(input, locale, rules, narrow_target)
     when "html"
       if dialect
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
-      analyze_html(input, locale, rules)
+      analyze_html(input, locale, rules, narrow_target)
     else # "markdown"
-      analyze_markdown(input, locale, dialect, rules)
+      analyze_markdown(input, locale, dialect, rules, narrow_target)
     end
   end
 
@@ -90,61 +92,67 @@ module Polytypo
   end
   private_class_method :resolve_mode
 
-  def self.transform_text(input, locale, rules)
+  def self.transform_text(input, locale, rules, narrow_target)
     _resolved, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     cp = Engine::Codepoints.to_codepoints(input)
-    ctx = Engine::RuleContext.new(mode: "text", dialect: nil, locale: locale)
+    ctx = Engine::RuleContext.new(mode: "text", dialect: nil, locale: locale,
+                                  narrow_target: narrow_target)
     result = Engine::Pipeline.run_rules(cp, plan, locale_data, ctx)
     Engine::Codepoints.from_codepoints(result)
   end
   private_class_method :transform_text
 
-  def self.transform_html(input, locale, rules)
+  def self.transform_html(input, locale, rules, narrow_target)
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     spans = Modes::Html.html_spans(input)
-    ctx = Engine::RuleContext.new(mode: "html", dialect: nil, locale: resolved_locale)
+    ctx = Engine::RuleContext.new(mode: "html", dialect: nil, locale: resolved_locale,
+                                  narrow_target: narrow_target)
     cp = Engine::Codepoints.to_codepoints(input)
     Modes::Runner.run_over_spans(cp, spans, plan, locale_data, ctx)
   end
   private_class_method :transform_html
 
-  def self.transform_markdown(input, locale, dialect, rules)
+  def self.transform_markdown(input, locale, dialect, rules, narrow_target)
     # Validation order is public, tested behaviour, identical across every runtime: rules (an
     # unknown rule id), then locale (an unknown locale), then dialect/parsing.
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     require_relative "polytypo/modes/markdown"
     Modes::Markdown.resolve_dialect(dialect)
     spans = Modes::Markdown.markdown_spans(input)
-    ctx = Engine::RuleContext.new(mode: "markdown", dialect: dialect, locale: resolved_locale)
+    ctx = Engine::RuleContext.new(mode: "markdown", dialect: dialect, locale: resolved_locale,
+                                  narrow_target: narrow_target)
     cp = Engine::Codepoints.to_codepoints(input)
     Modes::Runner.run_over_spans(cp, spans, plan, locale_data, ctx)
   end
   private_class_method :transform_markdown
 
-  def self.analyze_text(input, locale, rules)
+  def self.analyze_text(input, locale, rules, narrow_target)
     _resolved, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     cp = Engine::Codepoints.to_codepoints(input)
-    ctx = Engine::RuleContext.new(mode: "text", dialect: nil, locale: locale)
+    ctx = Engine::RuleContext.new(mode: "text", dialect: nil, locale: locale,
+                                  narrow_target: narrow_target)
     Engine::Pipeline.run_rules_recording(cp, plan, locale_data, ctx, (0...cp.length).to_a, cp.length)
   end
   private_class_method :analyze_text
 
-  def self.analyze_html(input, locale, rules)
+  def self.analyze_html(input, locale, rules, narrow_target)
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     spans = Modes::Html.html_spans(input)
-    ctx = Engine::RuleContext.new(mode: "html", dialect: nil, locale: resolved_locale)
+    ctx = Engine::RuleContext.new(mode: "html", dialect: nil, locale: resolved_locale,
+                                  narrow_target: narrow_target)
     Modes::Runner.analyze_over_spans(Engine::Codepoints.to_codepoints(input), spans, plan, locale_data, ctx)
   end
   private_class_method :analyze_html
 
-  def self.analyze_markdown(input, locale, dialect, rules)
+  def self.analyze_markdown(input, locale, dialect, rules, narrow_target)
     # Validation order is public, tested behaviour and is shared with .transform: rules, then
     # locale, then dialect/parsing (analyze.md section 4, A1).
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     require_relative "polytypo/modes/markdown"
     Modes::Markdown.resolve_dialect(dialect)
     spans = Modes::Markdown.markdown_spans(input)
-    ctx = Engine::RuleContext.new(mode: "markdown", dialect: dialect, locale: resolved_locale)
+    ctx = Engine::RuleContext.new(mode: "markdown", dialect: dialect, locale: resolved_locale,
+                                  narrow_target: narrow_target)
     Modes::Runner.analyze_over_spans(Engine::Codepoints.to_codepoints(input), spans, plan, locale_data, ctx)
   end
   private_class_method :analyze_markdown

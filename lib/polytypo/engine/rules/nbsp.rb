@@ -122,6 +122,8 @@ module Polytypo
           :before_punctuation, :narrow_before_punctuation, :short_words, :abbreviations,
           :units, :before_number, :before_word, :symbols, :initial_binding, :opens, :closes,
           :quote_pairs,
+          # nbsp.md 3.1a NARROW-TARGET: what N2 writes, and what N8 writes for a narrow-nbsp pair.
+          :narrow_target,
           keyword_init: true,
         )
 
@@ -145,7 +147,7 @@ module Polytypo
         # Resolves the locale's nbsp and quotes fields to code points once. nbsp.md 2 lists the
         # fields; 2.1 explains why the mechanism (U+00A0 vs U+202F, convert-only vs insert)
         # lives here and not in the locale file.
-        def self.prepare(locale_data)
+        def self.prepare(locale_data, narrow_target = NNBSP)
           data = locale_data["nbsp"]
           before_punctuation = data["beforePunctuation"].map { |e| single_code_point(e, "beforePunctuation") }
           narrow_before_punctuation =
@@ -191,7 +193,7 @@ module Polytypo
             # (7.5).
             next if open_cp == close_cp
 
-            target = pair["innerSpace"] == "nbsp" ? NBSP : NNBSP
+            target = pair["innerSpace"] == "nbsp" ? NBSP : narrow_target
             quote_pairs << QuoteTarget.new(open_cp, close_cp, target)
           end
 
@@ -208,6 +210,7 @@ module Polytypo
             opens: opens,
             closes: closes,
             quote_pairs: quote_pairs,
+            narrow_target: narrow_target,
           )
         end
 
@@ -610,12 +613,16 @@ module Polytypo
         # yielding the index to a lower-priority sub-rule. Sub-rules wanting *different* code
         # points at a shared index are therefore made disjoint by construction elsewhere
         # (N1/N2's quote-glyph guard, nbsp.md 3.10.1) rather than relying on ordering alone.
-        def self.scan(cp, locale_data, _ctx)
-          prep = prepare(locale_data)
+        def self.scan(cp, locale_data, ctx)
+          prep = prepare(locale_data, ctx.narrow_target)
           claims = Array.new(cp.length + 1)
 
-          punctuation_sub_rule(cp, prep, claims, prep.before_punctuation, NBSP, NNBSP)       # N1
-          punctuation_sub_rule(cp, prep, claims, prep.narrow_before_punctuation, NNBSP, NBSP) # N2
+          punctuation_sub_rule(cp, prep, claims, prep.before_punctuation, NBSP, NNBSP) # N1
+          # N2's target is NARROW-TARGET (nbsp.md 3.1a); `other` is the NOBREAK member that is
+          # not the target, which is what the sub-rule converts. With the substitution on, N2 and
+          # N1 want the same character -- never different ones.
+          other = prep.narrow_target == NBSP ? NNBSP : NBSP
+          punctuation_sub_rule(cp, prep, claims, prep.narrow_before_punctuation, prep.narrow_target, other) # N2
           short_words_sub_rule(cp, prep, claims)                                             # N3
           abbreviations_sub_rule(cp, prep, claims)                                           # N4
           units_sub_rule(cp, prep, claims)                                                   # N5

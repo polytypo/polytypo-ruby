@@ -10,6 +10,9 @@ module Polytypo
   CODE_MALFORMED_LOCALE_DATA = "POLYTYPO_MALFORMED_LOCALE_DATA"
   CODE_RULE_CONTRACT = "POLYTYPO_RULE_CONTRACT"
   CODE_MALFORMED_INPUT = "POLYTYPO_MALFORMED_INPUT"
+  # Spec 1.3.0. Deliberately general: every option added from 1.3.0 on shares this code, while
+  # `mode` and `dialect` keep their own because callers branch on them.
+  CODE_INVALID_OPTION = "POLYTYPO_INVALID_OPTION"
 
   # The only error type Transform ever raises. One class is enough: the stable machine-readable
   # +code+ is the contract, not the exception type or the message text.
