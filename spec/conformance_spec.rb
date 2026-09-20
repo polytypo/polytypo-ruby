@@ -28,6 +28,7 @@ RSpec.describe "conformance fixtures" do
         opts[:dialect] = c["dialect"] if c["dialect"]
         opts[:rules] = c["rules"] if c["rules"]
         opts[:narrow_nbsp] = c["narrowNbsp"] if c["narrowNbsp"]
+        opts[:keys] = c["keys"] if c["keys"]
 
         if c["throws"]
           expect { Polytypo.transform(c["in"], **opts) }
@@ -41,8 +42,9 @@ RSpec.describe "conformance fixtures" do
                                           "out = #{escape_non_ascii(got)}, want #{escape_non_ascii(expected)}"
 
         # Free coverage, and the most common port bug (ARCHITECTURE.md 6.1). The re-run carries
-        # the case's OWN options: a case with narrowNbsp is a fixed point under that option and
-        # not under the defaults, so spreading **opts here is contract, not convenience.
+        # the case's OWN options: a case with narrowNbsp or keys is a fixed point under those and
+        # not under the defaults, so spreading **opts here is contract, not convenience -- and for
+        # keys the re-run would not even run without it, since the option has no default.
         twice = Polytypo.transform(expected, **opts)
         expect(escape_non_ascii(twice)).to eq(escape_non_ascii(expected)),
                                             "not idempotent: transform(out) = #{escape_non_ascii(twice)}"

@@ -44,6 +44,8 @@ Naming/MethodParameterName:
     - y
     - to
     - from
+    - li
+    - v
 
 Style/ComparableBetween:
   Enabled: false
@@ -66,8 +68,13 @@ Metrics/ClassLength:
   Max: 800
 Metrics/ModuleLength:
   Max: 800
+# The public API's keyword list is fixed by the spec's options table (ARCHITECTURE.md section 7),
+# not by this method: counting `locale:`, `mode:`, `dialect:`, `keys:`, `rules:` and
+# `narrow_nbsp:` measures the contract, and the contract is the same in five runtimes. Positional
+# parameter lists are still counted, and still capped at six.
 Metrics/ParameterLists:
   Max: 6
+  CountKeywordArgs: false
 Metrics/BlockNesting:
   Max: 5
 Metrics/BlockLength:

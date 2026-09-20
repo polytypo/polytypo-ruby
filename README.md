@@ -21,7 +21,7 @@
 
 This is the Ruby implementation. The full spec — all locales, all rules, worked examples in
 each — lives in [polytypo/polytypo](https://github.com/polytypo/polytypo). This runtime supports
-the `text` and `html` modes fully, and `markdown` for the `commonmark` dialect only — `mdx`
+the `text`, `html` and `yaml` modes fully, and `markdown` for the `commonmark` dialect only — `mdx`
 returns `POLYTYPO_INVALID_DIALECT` (no MDX/JSX parser is available for Ruby; see
 [Supported dialects](#supported-dialects)).
 
@@ -69,6 +69,22 @@ fallback to English. `mode:` defaults to `"text"` if omitted.
 Polytypo.transform(input, locale: "fr", mode: "markdown", dialect: "commonmark")
 ```
 
+`yaml` mode is the one that asks something of you, and it asks for a reason. YAML is a data
+format with prose in some of it, so you name the keys whose values are prose; there is no default
+and no guess:
+
+```ruby
+Polytypo.transform("summary: Rates -- all of them...\nrun: git diff -- a--b\n",
+                   locale: "en-US", mode: "yaml", keys: ["summary"])
+# => "summary: Rates—all of them…\nrun: git diff -- a--b\n"
+```
+
+Nothing in YAML's syntax separates a sentence from a shell script: `description` holds one and
+`run` holds the other, spelled identically. Quoting, indentation, anchors and a block scalar's
+chomping indicator are never decoded and rewritten — the file is located, not re-emitted — so the
+trailing newlines of a `|+` block come back exactly as you wrote them. An empty `keys:` array is
+legal and processes nothing, and `yaml` mode needs no parser at all.
+
 `require "polytypo"` never loads the native `commonmarker` extension unless you actually call
 `Polytypo.transform` with `mode: "markdown"` — the require happens lazily, inside the markdown
 pipeline only. A single `Polytypo.transform` module method (not separate
@@ -78,7 +94,7 @@ without a separate namespace per mode.
 
 `Polytypo.analyze` runs the same pipeline and reports what it would do instead of doing it — one
 record per edit, each with the rule that made it and code-point offsets into the input you passed
-(into the **document**, in `html` and `markdown` mode, not into a span):
+(into the **document**, in `html`, `markdown` and `yaml` mode, not into a span):
 
 ```ruby
 Polytypo.analyze(%q{Wait... "really"?}, locale: "en-US")

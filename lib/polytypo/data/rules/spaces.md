@@ -1,0 +1,649 @@
+# Rule: `spaces`
+
+**Order:** 10 (first). **Default:** on. **Modes:** text, html, markdown, yaml.
+**Spec version:** 1.2.0 (0.2.0 for everything except §3.6's mouth side and the clause it adds to
+§3.2 step 5, noted inline, and §3.4's word-start clause, added in 1.2.0).
+
+---
+
+## 1. Purpose
+
+`spaces` performs the space hygiene that every later rule depends on: it collapses a run of
+two or more ordinary spaces down to one, and it deletes an ordinary space that sits between
+a word and a following punctuation mark or on the inner edge of a bracket pair. It runs
+first so that the rules after it see one canonical spacing form and never have to consider
+`"a  ,  b"` alongside `"a, b"`. It is deliberately the most conservative rule in the
+pipeline: it only ever _removes_ U+0020 (space), it never inserts anything, it never touches
+any other whitespace character, and it never touches whitespace that carries structural
+meaning (indentation, Markdown hard line breaks, line terminators). Where a locale genuinely
+wants a space before punctuation — French `?` `!` `;` `:` — this rule still removes the
+ordinary space, and the `nbsp` rule (order 70) re-inserts the correct no-break form; that
+round trip is intentional and is what makes the French output deterministic regardless of
+how the author typed it.
+
+---
+
+## 2. Locale data consumed
+
+**None.** `order.json` declares `"localeData": []` for this rule. The behaviour of `spaces`
+is identical in every locale. Locale-dependent spacing is entirely the responsibility of
+`nbsp`.
+
+---
+
+## 3. Algorithm
+
+The input is a code-point array `cp[0 … n-1]`. Indices below are code-point indices
+(ARCHITECTURE.md §4.2). The rule emits edits; the pipeline applies them.
+
+### 3.1 Character classes
+
+| Class             | Members                                                                                                                                                                                                                                                  |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SPACE`           | U+0020 (space) — **the only** character this rule ever removes                                                                                                                                                                                           |
+| `BREAK`           | U+000A (LF), U+000D (CR), U+000B (VT), U+000C (FF), U+0085 (NEL), U+2028 (LS), U+2029 (PS)                                                                                                                                                               |
+| `PROTECTED-SPACE` | U+0009 (tab), U+00A0 (nbsp), U+202F (narrow nbsp), U+2007 (figure space), U+2008 (punctuation space), U+2009 (thin space), U+200A (hair space), U+2000–U+2006, U+205F (medium math space), U+3000 (ideographic space), U+200B (zero-width space), U+FEFF |
+| `CONTENT`         | any code point that is **not** in `SPACE` and **not** in `BREAK`. Note that every member of `PROTECTED-SPACE` is `CONTENT` for the purposes of this rule — it bounds a space run and is never itself modified.                                           |
+| `STRIP-BEFORE`    | exactly six code points: U+002C (,) U+002E (.) U+003B (;) U+003A (:) U+0021 (!) U+003F (?). **U+2026 is deliberately not a member** — see §3.4                                                                                                           |
+| `DOTLIKE`         | U+002E (.) and U+2026 (…)                                                                                                                                                                                                                                |
+| `OPEN-BRACKET`    | U+0028 `(` U+005B `[` U+007B `{`                                                                                                                                                                                                                         |
+| `CLOSE-BRACKET`   | U+0029 `)` U+005D `]` U+007D `}`                                                                                                                                                                                                                         |
+| `EMOTICON-EYE`    | U+003A (:), U+003B (;) — a subset of `STRIP-BEFORE`, not a new code point this rule reads outside it. See §3.6                                                                                                                                          |
+| `EMOTICON-NOSE`   | U+002D (-), U+005E (^). Optional. See §3.6                                                                                                                                                                                                               |
+| `EMOTICON-MOUTH`  | U+0028 `(`, U+0029 `)`, U+005B `[`, U+005D `]`, U+0044 `D`, U+0064 `d`, U+0050 `P`, U+0070 `p`, U+004F `O`, U+006F `o`, U+002F `/`, U+005C `\`, U+007C `|`, U+002A `*`. U+0028 and U+005B are `OPEN-BRACKET` members too, and U+0029 and U+005D are `CLOSE-BRACKET` members — the overlap is what §3.6's mouth side exists for. See §3.6 |
+
+`STRIP-BEFORE` contains only these **six** code points. It deliberately excludes closing
+quotation marks and guillemets: their inner spacing is `nbsp`'s business (`quotes.innerSpace`),
+and stripping there would fight with it.
+
+### 3.2 Scan
+
+1. Set `i = 0`.
+2. If `cp[i]` is not `SPACE`, emit nothing, set `i = i + 1`, repeat from 2. Terminate when
+   `i = n`.
+3. `cp[i]` is `SPACE`. Find the maximal run: let `s = i`; let `e` be the smallest index
+   `> s` such that `cp[e]` is not `SPACE` (or `e = n` if the run reaches the end of the
+   array). The run is `cp[s … e-1]`, length `k = e - s`.
+4. **Boundary guard.** Look one code point left of the run and one right of it:
+   - `left = cp[s-1]` if `s > 0`, otherwise `NONE`;
+   - `right = cp[e]` if `e < n`, otherwise `NONE`.
+     If `left` is `NONE` or is in `BREAK`, **skip the run entirely** (emit nothing, set
+     `i = e`, go to 2). This protects leading indentation, including Markdown list and code
+     indentation.
+     If `right` is `NONE` or is in `BREAK`, **skip the run entirely**. This protects the
+     two-space Markdown hard line break (`"foo  \n"`) and trailing spaces at the end of a
+     text unit, which in `html` mode are frequently the only separator between two inline
+     elements.
+     Only a run with `CONTENT` on **both** sides is a candidate.
+
+     **In `html` and `markdown` mode, a span boundary marker counts as `NONE` here.** This is
+     the one place in the whole spec where a marker is not opaque content, it is normative, and
+     it is specified in [modes.md](modes.md) §3.3 under _Edge tests_ — read the justification
+     there before changing either document. In short: this guard exists because deleting
+     whitespace at an edge is irreversible and this rule cannot see past the edge, which is
+     exactly the situation at a span boundary; and without it `<em>mot</em> !` in `fr` loses its
+     space to the `STRIP-BEFORE` branch and gains nothing back, because `nbsp`'s replacement
+     insertion is then refused at the span edge.
+5. **Decide the replacement length in one step** (never two passes — see §5):
+   - If the _empty-bracket guard_ (§3.3) fires → replacement length **1**.
+   - Else if `left` is in `OPEN-BRACKET` **and the emoticon guard's mouth side (§3.6) does not
+     fire** → replacement length 0.
+   - Else if `right` is in `CLOSE-BRACKET` → replacement length 0.
+   - Else if `right` is in `STRIP-BEFORE` **and the lone-dot condition (§3.4) holds and the
+     emoticon guard's eye side (§3.6) does not fire** → replacement length 0.
+   - Else → replacement length 1.
+     The guard is a clause of this decision, not a separate "skip the run" branch. **This
+     reading is normative**; see §3.3.
+6. If the replacement length equals `k`, emit nothing (the run is already canonical).
+   Otherwise emit one edit replacing `cp[s … e-1]` with either the empty sequence or a
+   single U+0020.
+7. Set `i = e` and go to 2.
+
+### 3.3 The empty-bracket guard
+
+A space run whose **removal** would produce an empty bracket pair is not removed. Concretely,
+for a run at `[s, e)`:
+
+- if `left` is in `OPEN-BRACKET` and `right` is the matching `CLOSE-BRACKET`
+  (`(`↔`)`, `[`↔`]`, `{`↔`}`), the guard fires.
+
+**Normative reading: the guard forces the replacement length to 1, it does not skip the run.**
+Two readings were possible and they differ on `"(  )"` (two spaces between an empty pair):
+"skip the run" leaves `"(  )"`, "replacement length 1" collapses it to `"( )"`. The second is
+normative. Reasons: the guard exists to prevent _deletion_, and collapsing a double space is
+the rule's ordinary business everywhere else; a run of two spaces inside an empty bracket pair
+carries no structural meaning in any of the four modes (the GFM task-list marker is
+`"[ ]"` with exactly one space — `"[  ]"` is not a checkbox in any implementation); and the
+one-clause form keeps §3.2 step 5 a single total function of the run's context — `left`, `right`
+and the bounded lookaround of §3.4 and §3.6 — rather than a decision plus a separate skip branch,
+which is what the idempotency argument in §5 relies on. The two-space case is a fixture.
+
+The guard exists for one specific ship-blocking reason: the GitHub-Flavoured Markdown
+task-list marker `"- [ ] item"`. Collapsing that space is a no-op; _deleting_ it produces
+`"- [] item"` and silently destroys the checkbox. The guard also protects `"( )"` used as a
+placeholder.
+
+### 3.4 The lone-dot condition
+
+`STRIP-BEFORE` exists to remove a space that a typist left before **one terminal punctuation
+mark**. It must not remove a space before a _run_ of dots, because a run of dots is a different
+kind of token — a relative path, a truncation, a typed ellipsis — and deleting the space either
+merges it with a preceding abbreviation dot or silently destroys word spacing.
+
+> **Lone-dot condition.** If `right` is U+002E, the replacement length may be 0 **only if** the
+> maximal run of `DOTLIKE` code points beginning at that index has length exactly 1 **and** the
+> code point after that dot, `cp[e+1]`, is neither a `LETTER` (ARCHITECTURE.md §4.1's Unicode
+> category test, as in §3.6) nor an ASCII digit. Otherwise the replacement length is 1.
+>
+> **U+2026 is not in `STRIP-BEFORE` at all**, so a space before an existing ellipsis is never
+> deleted.
+
+Both halves are needed and the second is not obvious. Suppose only the first were adopted.
+Then `Wait ...` keeps its space, `ellipsis` converts the run, and the result is `Wait …` — at
+which point a _second_ pipeline pass finds a U+0020 before a U+2026, strips it, and yields
+`Wait…`. That is a two-pass divergence of exactly the kind
+[pipeline-idempotency.md](pipeline-idempotency.md) exists to prevent, introduced by the fix for
+another one. Removing U+2026 from `STRIP-BEFORE` closes it: the author's spacing around an
+ellipsis, however they wrote it, is preserved and is stable.
+
+**The word-start clause (spec 1.2.0).** A single dot followed directly by a letter or a digit is
+not terminal punctuation either: it starts a token. `.NET`, `.DWG`, `.gitignore`, `.env` and the
+decimal `.5` are words, and before 1.2.0 the space in front of each was deleted —
+`Use .NET, .NET Core` became `Use.NET,.NET Core`, `CAD files (.DWG, .STEP)` became
+`CAD files (.DWG,.STEP)`. The first half of the condition could not see this, because it measures
+only the dot run. The second half reads one code point further, the same distance and the same
+`LETTER`/ASCII-digit test the emoticon guard's eye side already uses (§3.6 step 3).
+
+The cost is stated here so it is not rediscovered as a bug: `end .Next sentence` — a misplaced
+full stop with the following space also missing — keeps its stray space instead of becoming
+`end.Next sentence`. Both readings of that input lose something, and the one given up is the
+destructive one: deleting the space glues two words together, and a later pass cannot tell the
+glued form from a genuine `end.Next`. Keeping it leaves the input as the author typed it. That is
+the same principle as §3.6's trailing check and §7.11 — where deletion and preservation disagree,
+the reading that deletes less wins. A dot followed by anything else — a space, a closing bracket,
+a quotation mark, punctuation, a line terminator, the end of the text, or a span boundary marker
+in `html`/`markdown` mode (which is in neither `LETTER` nor `DIGIT`, [modes.md](modes.md) §3.3) —
+is still a terminal full stop, and the space before it is still deleted.
+
+**What this deliberately does not break.** The runs in step 3 are maximal runs **in the input
+array**, and the condition is evaluated against the input. In the Chicago-style spaced ellipsis
+`Hello . . .` every dot is a _lone_ dot at the moment the decision is made — each is followed by
+a space, not by another dot — so all three spaces are still stripped, the dots merge into
+`Hello...`, and `ellipsis` converts them to `Hello…`. The condition costs that case nothing.
+
+**What it does change.** `Wait ...` now becomes `Wait …` rather than `Wait…`; the space the
+author typed survives. That is consistent with how this rule treats every other authorial
+spacing choice (§7.5), and it is the price of not deleting the space in `See ../docs`.
+
+### 3.5 Greek compatibility punctuation, and what "match on a code point" means
+
+Greek raises the one case where the character a reader sees and the code point a rule matches
+on come apart. Part 1 and part 3 below are properties of the whole rule set and are settled
+here rather than in the locale file; part 2 is about this rule only, and says so, because the
+generalisation is exactly what does not hold (see §7.8).
+
+| Reader sees       | Recommended code point | Compatibility code point | Canonical relation |
+| ----------------- | ---------------------- | ------------------------ | ------------------ |
+| ερωτηματικό (`;`) | U+003B `;`             | U+037E                   | U+037E ≡ U+003B    |
+| άνω τελεία (`·`)  | U+00B7 `·`             | U+0387                   | U+0387 ≡ U+00B7    |
+
+Both compatibility characters have a **canonical** decomposition, so NFC and NFD both map them
+away; the Unicode Standard records that **most** vendor code pages never had them, and states
+that their use "is not generally encouraged for representation of Greek punctuation"
+(ch. 7 §7.2.1). The consequence for this spec is that a Greek question mark and a Latin
+semicolon are, at the level a rule operates on, **the same code point** — U+003B — and no
+amount of context lets a single scan distinguish them.
+
+**The normative position, in three parts:**
+
+1. **Every rule matches on the literal code points enumerated in its own class tables, and on
+   nothing else.** No rule consults canonical equivalence, no rule normalises its input, and no
+   rule has a notion of "the same character spelled differently" (ARCHITECTURE.md §4.3). A class
+   table is a list of code points, not a list of characters.
+
+2. **For _this_ rule, the U+003B ambiguity is harmless.** U+003B is in `STRIP-BEFORE`. Read as a
+   Latin semicolon it takes no preceding space in any locale polytypo supports; read as a Greek
+   ερωτηματικό nothing in the Greek sources asks for one either — the nearest statements are
+   about the neighbouring marks and deny the French pattern by name for both (`Στα ελληνικά,
+πριν από τη διπλή τελεία δεν πρέπει να υπάρχει διάστημα (πράγμα που συμβαίνει, π.χ., στα
+γαλλικά)`, and the same sentence again for the άνω τελεία). Both readings therefore prescribe
+   the same edit and this rule never has to choose: `Τι κάνεις ;` becomes `Τι κάνεις;` whichever
+   character the author meant. Note the standard of evidence, because it is weaker than it looks
+   — no source examined addresses the ερωτηματικό _specifically_, so the claim is "no source
+   contradicts it", not "a source requires it". Nothing rests on the difference here, since
+   U+003B would be in `STRIP-BEFORE` for the Latin reading alone.
+
+   **This does not generalise to the other rules, and §7.8 records where it fails.** The
+   ambiguity is harmless in `spaces` because the two readings happen to agree; that is a fact
+   about the two conventions, not a property the rule set enjoys everywhere. `ellipsis` is the
+   counter-example: its `TERMINAL` set is `{U+0021, U+003F}`, so the Latin reading of U+003B
+   wins silently and `Πράγματι;..` — the genuinely Greek spelling — does not get the treatment
+   `Πράγματι?..` gets. **Any rule adding U+003B, U+0021 or U+003F to a class table must decide
+   the Greek reading explicitly rather than inheriting this paragraph.**
+
+3. **U+037E, U+0387 and U+00B7 are in no class of any rule, and no rule ever emits them.** Text
+   already written with a compatibility code point round-trips **untouched** — it is neither
+   converted to the recommended spelling nor treated as the character it decomposes to. Three
+   separate reasons, each sufficient:
+   - Rewriting U+037E → U+003B or U+0387 → U+00B7 **is** normalisation, whatever it is called,
+     and §4.3 forbids it. It is also redundant: any downstream consumer applying NFC does it.
+   - **U+00B7 must not join `STRIP-BEFORE`.** It is a deliberate spaced separator in real
+     content — `Home · About · Contact`, and the Catalan and French interpunct — and stripping
+     there would be a false positive in locales that have nothing to do with Greek. This rule
+     reads no locale data (§2), so a Greek-only membership is not available to it.
+   - **Adding only U+0387 would be the worst of the three options.** Two canonically equivalent
+     characters would behave differently, and the one that got the correct treatment would be
+     the spelling Unicode discourages, while the recommended U+00B7 kept its stray space. A
+     split that punishes the correct input is not a partial fix.
+
+   The residual cost is exact and small: a space before an άνω τελεία survives. It is a rare
+   typo, and the alternative costs other locales real false positives.
+
+   An earlier revision added, in this sentence, that "the recommended Greek keyboard layouts
+   produce U+00B7 and U+003B rather than the compatibility pair". **That clause has been
+   deleted.** It is an empirical claim about keyboard layouts, it was stated as fact in
+   normative prose, and no source was offered for it — it was the only sentence in this section
+   a reviewer could not back with something readable. It may well be true; CLDR keyboard data or
+   a vendor layout specification would settle it. Until one is cited the argument does not need
+   it, which is why deleting was cheaper than sourcing.
+
+### 3.6 The emoticon guard
+
+`STRIP-BEFORE`'s two punctuation-adjacent members U+003A (:) and U+003B (;) are read two ways
+in ordinary text: as sentence punctuation (`Note: read this`, `Wait; think`) and as the eye of a
+Western text emoticon (`:-)`, `:)`, `;-)`). The two readings take opposite spacing: sentence
+punctuation never wants a preceding space (hence `STRIP-BEFORE`), but an emoticon is a token in
+its own right and the space before it is ordinary word spacing that must survive — `Привет :-)`
+must not become `Привет:-)`.
+
+Two of the mouth glyphs, U+0028 `(` and U+005B `[`, are also `OPEN-BRACKET` members, so the same
+token has to be protected from the other end as well: the space **after** the mouth is ordinary
+word spacing too, and the opening-bracket clause of §3.2 step 5 must not eat it. The guard
+therefore has two sides. They recognise the same shape — `EMOTICON-EYE`, optional
+`EMOTICON-NOSE`, `EMOTICON-MOUTH` — and differ only in which end of the space run it sits at, and
+in which clause of step 5 they suppress.
+
+> **Emoticon guard, eye side.** For a run whose `right` (at index `e`) is in `EMOTICON-EYE`, walk
+> forward:
+>
+> 1. Let `i = e + 1`. If `cp[i]` is in `EMOTICON-NOSE`, set `i = i + 1`.
+> 2. If `cp[i]` is not in `EMOTICON-MOUTH`, the guard does not fire.
+> 3. Otherwise let `after = cp[i + 1]` (or `NONE`). If `after` is a `LETTER` (ARCHITECTURE.md
+>    §4.1's Unicode category test, as used throughout this spec) or an ASCII digit, the guard
+>    does not fire. Otherwise **the guard fires**, and the `STRIP-BEFORE` clause of §3.2 step 5
+>    does not strip the space.
+
+> **Emoticon guard, mouth side.** For a run whose `left` (at index `s-1`) is in `EMOTICON-MOUTH`,
+> walk backward:
+>
+> 1. Let `j = s - 2`. If `cp[j]` is in `EMOTICON-NOSE`, set `j = j - 1`.
+> 2. If `cp[j]` is not in `EMOTICON-EYE`, the guard does not fire.
+> 3. Otherwise **the guard fires**, and the `OPEN-BRACKET` clause of §3.2 step 5 does not delete
+>    the run.
+>
+> There is no trailing check on this side and none is needed: the code point after the mouth is
+> the space run itself, which is neither a `LETTER` nor an ASCII digit, so the eye side's step 3
+> is satisfied here by construction.
+
+**What the mouth side fixes.** Without it the two clauses of step 5 contradicted each other about
+the same character: the eye side recognised `(` as a mouth while the opening-bracket clause went on
+reading it as a bracket. `a :( b` became `a :(b`, gluing the next word onto the emoticon — a false
+positive of exactly the kind the M4 gate (`docs/ROADMAP.md`) forbids — and the damage propagated,
+because with no space after the mouth `after` is a `LETTER`, the eye side stops firing, and a second
+pass strips the space in front of the eye as well: `a:(b`. That is a two-pass divergence, a release
+blocker under [pipeline-idempotency.md](pipeline-idempotency.md), and the eye side's own idempotency
+claim was what had been wrong.
+
+**Only the `OPEN-BRACKET` clause is suppressed.** The wider reading — "a run abutting a recognised
+emoticon is always length 1" — was considered and rejected as broader than the defect. It would also
+silence the `CLOSE-BRACKET` clause (`a :) )` would stay as typed instead of becoming `a :))`) and the
+`STRIP-BEFORE` clause (`a :) , b`), neither of which damages the emoticon or the words around it,
+and each of which would need its own composition argument. The mouth side is the smallest change
+that closes the defect.
+
+**Why the trailing check.** Without it, `:D` inside an ordinary word — `:Deal with it`,
+`;Design review` — would read as an emoticon and keep a space that sentence punctuation never
+wants. The mouth must be the end of a token, not the start of a capitalised word: `after` is
+checked against `LETTER` and `DIGIT`, not against `SPACE` or `NONE` specifically, so `:-)!`
+(mouth followed by punctuation) and `:-):-)` (two emoticons back to back) both still fire, and
+`10:30` (colon before a digit, no mouth at all — the mouth check in step 2 already declines it
+before this check is reached) and `:Deal` do not.
+
+**Scope, deliberately narrow.** This guard recognises the eye-nose-mouth shape of a Western
+text emoticon and nothing else: no East Asian kaomoji (`(^_^)`, whose parenthesis is the frame,
+not the eye), no `=)` (U+003D is not in `STRIP-BEFORE` and has no bug to fix), no emoji. It
+exists because `STRIP-BEFORE`'s membership of U+003A and U+003B was already normative and
+locale-independent (§2), and an emoticon eye is the one shape that class was silently getting
+wrong; it is not a general-purpose emoticon detector and does not try to be one.
+
+**Both sides require an eye.** The backward walk is unambiguous because `EMOTICON-NOSE` and
+`EMOTICON-EYE` are disjoint, and a nose on its own is not a face: `a -( b` still becomes `a -(b`
+under the ordinary opening-bracket clause.
+
+**Idempotency.** An earlier revision claimed here that the guard "reads only `cp[e]`, `cp[e+1]` and
+`cp[e+2]`, none of which this rule … ever modifies". Both halves were false: with a nose the eye
+side reads through `cp[e+3]`, and step 3's `after` is, in precisely the shape that broke, the U+0020
+run step 5 was about to delete — so the verdict was not a pure function of code points this rule
+does not write. The correct argument has one part per side.
+
+- **Mouth side.** It reads `cp[s-1]`, `cp[s-2]` and `cp[s-3]`, and in no position it accepts is that
+  a U+0020: an eye, a nose and a mouth are all `CONTENT` and must be adjacent. This rule never
+  inserts a code point and never removes a non-space one, so a shape it recognised in the input is
+  still contiguous and unchanged in the output. The verdict can therefore only move from "does not
+  fire" to "fires" — never the reverse — and firing only ever preserves a run, so neither direction
+  can produce a second-pass edit.
+- **Eye side.** Whenever the eye side fires, the mouth side recognises the same three code points
+  from the other end: the two walks read `EMOTICON-NOSE` and `EMOTICON-EYE`, which are disjoint, so
+  the backward walk's optional step over a nose cannot swallow the eye and the two sides cannot
+  disagree about the shape. A run whose `left` is that mouth is therefore protected from the
+  `OPEN-BRACKET` clause, and the only clauses of step 5 that can still delete it are the
+  `CLOSE-BRACKET` clause and the `STRIP-BEFORE` clause. The code point that comes to sit after the
+  mouth is then one of `)` `]` `}` or one of `STRIP-BEFORE`'s six; none of those nine is a `LETTER`
+  or an ASCII digit, so step 3 still passes on the re-run. Every other outcome — the empty-bracket
+  guard, a collapse to length 1, a run skipped by the boundary guard of §3.2 step 4 — leaves the
+  U+0020 in place, so `after` is unchanged. Either way the eye side's verdict survives the re-run.
+
+### 3.7 Worked trace
+
+`"a  (  b  ,  c  )  d"`
+
+| run    | left | right | decision                                                 |
+| ------ | ---- | ----- | -------------------------------------------------------- |
+| `a␣␣(` | `a`  | `(`   | not bracket-inner, right not in `STRIP-BEFORE` → 1 space |
+| `(␣␣b` | `(`  | `b`   | left is `OPEN-BRACKET`, guard does not fire → 0          |
+| `b␣␣,` | `b`  | `,`   | right in `STRIP-BEFORE` → 0                              |
+| `,␣␣c` | `,`  | `c`   | → 1 space                                                |
+| `c␣␣)` | `c`  | `)`   | right is `CLOSE-BRACKET` → 0                             |
+| `)␣␣d` | `)`  | `d`   | → 1 space                                                |
+
+Result: `"a (b, c) d"`.
+
+---
+
+## 4. Must not touch
+
+**Scope.** Per [pipeline-idempotency.md](pipeline-idempotency.md) §5.2 each bullet is **[P]** —
+a guarantee of `transform` as a whole — or **[R]** — true of this rule alone and capable of
+being falsified by another rule. This rule is R₁, so no _earlier_ rule can invalidate anything
+here; but later rules touch some of the same characters, and those bullets are marked [R].
+
+- **[R] Any character other than U+0020.** Tabs (U+0009) are never collapsed, never converted,
+  never removed — in Markdown a tab is indentation and the engine has no way to know whether
+  it is inside a code block. U+00A0 and U+202F are never collapsed, never removed, and never
+  converted to U+0020; a run such as `"a  b"` is left exactly as written.
+  U+2000–U+200A, U+205F, U+3000, U+200B and U+FEFF are likewise untouched.
+  _[R]: `nbsp` (R₈) may convert an existing U+00A0 to U+202F or the reverse. `transform` does
+  not promise an existing no-break space keeps its exact width — only that this rule never
+  collapses or deletes one._
+- **[P] Line terminators.** No character in `BREAK` is inserted, removed, or reordered. Space
+  runs never merge across a line terminator, because a `BREAK` on either side aborts the
+  candidate.
+- **[R] Leading whitespace on a line** (a run at index 0 or directly after a `BREAK`). Markdown
+  indented code blocks, nested list indentation and YAML front matter all depend on it.
+  _[R]: `nbsp` (R₈) can convert the **last** space of an indentation run when the character
+  after it is listed in `beforePunctuation`/`narrowBeforePunctuation` — a French line beginning
+  `␣␣?`. The run is never shortened, so indentation width survives; one code point changes
+  class._
+- **[P] Trailing whitespace before a line terminator or at the end of the text unit.** This is
+  the Markdown hard-break idiom and, in `html` mode, the inter-element separator.
+- **[R] Single spaces in ordinary positions.** `"a b"` is not a candidate for anything.
+- **[P] `"[ ]"`, `"( )"`, `"{ }"`** — see §3.3.
+- **[R] Spaces before a closing quotation mark or guillemet.** Owned by `nbsp` via
+  `quotes.innerSpace`.
+- **[R] A space before an emoticon's eye, and a space after an emoticon's mouth.** §3.6.
+  `Привет :-)` keeps its space in every locale, and so does `Привет :-( снова`, whose second space
+  would otherwise go to the opening-bracket clause. This rule reads no locale data (§2) and neither
+  side of the guard is locale-dependent either.
+  _[R]: `nbsp` (R₈) may convert the space **before** the eye to a no-break form in a locale whose
+  `nbsp.beforePunctuation` lists U+003A or U+003B — French `a :) b` yields `a⍽:) b`, because
+  [nbsp.md](nbsp.md) §3.3 step 2's right-context guard admits `CLOSEISH` after the mark. The run is never
+  deleted, so word spacing survives; one code point changes class. The space **after** the mouth
+  is touched by no later rule._
+- **[P] U+037E, U+0387, U+00B7.** In no class of this rule and of no other. A space before an
+  άνω τελεία survives, and a Greek compatibility code point is never rewritten to the character
+  it canonically decomposes to — §3.5. Note that the Greek ερωτηματικό is _not_ an exception
+  here: it is written U+003B, which is in `STRIP-BEFORE` on its own merits.
+- **[P] Anything inside a skipped region.** Code spans, fenced code, `<pre>`, attributes and
+  URLs never reach this rule; the mode adapter (L2) removes them before the pipeline runs.
+  This rule contains no code-awareness of its own and must not grow any.
+
+---
+
+## 5. Idempotency argument
+
+Let `T` be the transformation described in §3.2.
+
+Every edit replaces a maximal `SPACE` run bounded by `CONTENT` on both sides with either
+zero or one U+0020. Consider the output `T(x)` and re-run the scan.
+
+- The bounding characters of every run are `CONTENT` and are never modified by this rule, so
+  the `left`/`right` classification of any surviving run is unchanged between runs.
+- A run replaced by zero spaces no longer exists; its former neighbours `left` and `right`
+  are now adjacent. `right` is a member of `STRIP-BEFORE` or a bracket, and `left` is
+  `CONTENT`. No new `SPACE` run has been created — deletion cannot create a space — so
+  there is nothing to re-examine at that position.
+- A run replaced by one space is now a run of length `k' = 1` with the same `left` and
+  `right`. Re-running step 5 on it yields the same decision — it is a function of `left`, `right`
+  and the bounded lookaround of §3.4 and §3.6, each of which argues its own window's stability
+  (§3.4's word-start clause: see the paragraph after this list) —
+  namely replacement length 1, and step 6 then emits nothing because `k' = 1` already equals the
+  replacement length.
+- A skipped run is skipped again for the same reason (its guard condition depends only on
+  `left`, `right` and bracket matching, all unchanged).
+
+**§3.4's window.** The lone-dot condition reads `cp[e]`, the dot run starting there, and — since
+1.2.0 — `cp[e+1]`. The dot run is made of non-space code points this rule never writes. `cp[e+1]`
+can change between passes only if it was a U+0020 whose run this pass deleted, bringing its right
+neighbour against the dot. A run is deleted only by the `STRIP-BEFORE`, `CLOSE-BRACKET` and
+`OPEN-BRACKET` clauses of step 5; the run after a dot has the dot as its `left`, so the
+`OPEN-BRACKET` clause cannot apply, and the other two leave behind a `STRIP-BEFORE` member or a
+closing bracket — none of which is a `LETTER` or an ASCII digit. So the word-start clause's verdict
+("is `cp[e+1]` a letter or a digit?") is the same on both passes, whatever this pass did after the
+dot.
+
+Therefore `T(T(x)) = T(x)`.
+
+**What had to be fixed to get here.** The naive formulation — "first collapse doubles, then
+strip spaces before punctuation" — is two passes and is _not_ obviously idempotent, and worse,
+it is not obviously order-independent: `"a  ,  b"` collapses to `"a , b"` and then strips to
+`"a, b"`, which requires the second pass to run over the output of the first, i.e. a
+fixed-point loop. Fixed-point loops are exactly what a spec must not require, because two
+implementations will disagree about how many iterations they run. The formulation above
+computes the replacement length for each run **once**, from `left` and `right` alone, so a
+single pass reaches the fixed point directly.
+
+The second thing that had to be fixed: the naive rule "collapse every run of ≥2 spaces" is
+not merely non-idempotent-adjacent, it is _destructive_ on Markdown hard breaks and on
+indentation. The `CONTENT`-on-both-sides boundary guard (step 4) is what makes the rule safe,
+and it is a precondition of the argument above, not an optimisation.
+
+---
+
+### Composition obligation
+
+Per [pipeline-idempotency.md](pipeline-idempotency.md) §5. This rule is **R₁**: nothing runs
+before it, so **the obligation is empty**. There is no earlier invariant it could break.
+
+The obligation pointing the other way is not empty, and it is the one that bit. `I₁` — the
+statement that this rule is a no-op, spelled out as S-a … S-d in that document §3 — must be
+preserved by all seven later rules. Only one of them emits U+0020 at all (`dashes`), and it
+violated S-b, S-c and S-d until guard T2 was added. The exact positions from which this rule
+deletes a space are therefore load-bearing for the whole pipeline, and §3.2 step 5 should be
+treated as a published interface rather than an implementation detail.
+
+**Spec 1.2.0's word-start clause adds one thing a later rule must not do.** S-b now permits a
+U+0020 before a lone dot whose next code point is a `LETTER` or an ASCII digit. A later rule that
+replaced that letter or digit with something else would turn a permitted space into a forbidden one,
+without emitting any U+0020. None does: `ellipsis` writes only `DOTLIKE` code points; `ranges`,
+`dashes` and `hyphen` replace dashes, hyphens and spaces; `quotes` and `apostrophe` replace
+quotation marks; `symbols` replaces a trademark literal, which starts with `(`, and a `MUL-LETTER`,
+which is always preceded by a digit or a space and so never follows a dot directly; `nbsp` replaces
+or inserts spaces, and inserts only beside a listed punctuation mark or a quote glyph, never between
+a dot and a letter. A new rule that rewrites letters or digits must re-check this.
+
+---
+
+## 6. Worked examples
+
+`␣` = U+0020, `⟶` = no change expected, `↵` = U+000A, `⍽` = U+00A0. Every row is
+locale-independent **except 9b**, which is marked with its locale: the rule reads no locale data
+(§2), but that row's point is that a Greek reading and a Latin reading of U+003B reach the same
+verdict here, so naming the locale is what makes the claim checkable.
+
+| #   | Input                  | Output             | Why                                                                                                                                                                   |
+| --- | ---------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `Hello␣␣␣world.`       | `Hello␣world.`     | run of 3 with `CONTENT` both sides → 1                                                                                                                                |
+| 2   | `Hello␣,␣world␣!`      | `Hello,␣world!`    | `,` and `!` are in `STRIP-BEFORE`; the run after `,` keeps one space                                                                                                  |
+| 3   | `(␣ok␣)␣and␣[␣x␣]`     | `(ok)␣and␣[x]`     | bracket-inner runs deleted; the guard does not fire because the inner side is not the matching closer                                                                 |
+| 4   | `-␣[␣]␣buy␣milk`       | ⟶                  | empty-bracket guard (§3.3): replacement length 1, and the run is already length 1 → no edit. The GFM checkbox survives                                                |
+| 4b  | `(␣␣)`                 | `(␣)`              | empty-bracket guard forces length 1, it does not skip — §3.3, normative reading                                                                                       |
+| 5   | `line␣one␣␣↵line␣two`  | ⟶                  | the two-space run is directly followed by `BREAK` → skipped; the Markdown hard break survives                                                                         |
+| 6   | `␣␣␣␣indented␣code`    | ⟶                  | run starts at index 0 → skipped                                                                                                                                       |
+| 7   | `5⍽␣␣km`               | `5⍽␣km`            | the U+00A0 is `CONTENT`; only the U+0020 run beside it collapses, and the U+00A0 itself is untouched                                                                  |
+| 8   | `a⍽⍽b`                 | ⟶                  | no U+0020 anywhere; two no-break spaces are never collapsed                                                                                                           |
+| 9   | `Bonjour␣!␣Ça␣va␣?`    | `Bonjour!␣Ça␣va?`  | French input; the ordinary spaces go, and `nbsp` (order 70) later restores `Bonjour⁠<U+202F>!`                                                                        |
+| 9b  | `Τι␣κάνεις␣;`          | `Τι␣κάνεις;`       | **`el`.** The Greek question mark is written U+003B, which is in `STRIP-BEFORE` on the Latin semicolon's own merits, so the space is stripped with no Greek-specific decision — §3.5 part 2. `nbsp` puts nothing back, because `el`'s punctuation lists are empty |
+| 10  | `See␣p.␣12␣.`          | `See␣p.␣12.`       | run before the final `.` deleted — a lone dot, so the condition holds                                                                                                 |
+| 10a | `See␣../docs`          | ⟶                  | **lone-dot condition (§3.4).** The dot run has length 2, so the space survives. Previously produced `See../docs`, silently destroying word spacing in a relative path |
+| 10b | `e.g.␣..`              | ⟶                  | same. Previously produced `e.g...`, which `ellipsis` then legitimately read as a three-dot run and converted to `e.g…`                                                |
+| 10c | `Wait␣...`             | ⟶                  | the space survives (run length 3). `ellipsis` then yields `Wait␣…`, and because U+2026 is not in `STRIP-BEFORE` that is a fixed point                                 |
+| 10d | `Hello␣.␣.␣.`          | `Hello...`         | every dot is a **lone** dot in the input, so all three spaces strip and the Chicago-style spaced ellipsis still merges — `ellipsis` converts it to `Hello…`           |
+| 10e | `Wait␣…`               | ⟶                  | U+2026 is not in `STRIP-BEFORE`                                                                                                                                       |
+| 10f | `Use␣.NET,␣.NET␣Core`  | ⟶                  | **word-start clause (§3.4, spec 1.2.0).** Each dot is followed by a letter, so it starts a word and neither space is deleted. Previously produced `Use.NET,.NET␣Core` |
+| 10g | `(.DWG,␣.STEP)`        | ⟶                  | same: the space after the comma survives because `.STEP` is a token, not a full stop. The comma run is untouched regardless — its `right` is the dot, not the comma |
+| 10h | `from␣.5␣to␣.9`        | ⟶                  | same, for an ASCII digit after the dot                                                                                                                              |
+| 10i | `end␣.Next`            | ⟶                  | **the accepted cost.** A misplaced full stop followed by a letter keeps its stray space; the alternative glues two words — §3.4                                     |
+| 10j | `See␣p.␣12␣.␣Next`     | `See␣p.␣12.␣Next`  | a dot followed by a space is still terminal punctuation, so row 10 is unchanged by the word-start clause                                                             |
+| 11  | `foo␣␣␣␣↵␣␣␣␣bar`      | ⟶                  | first run touches a `BREAK` on the right, second on the left                                                                                                          |
+| 12  | `Q:␣␣why␣?␣␣Because␣.` | `Q:␣why?␣Because.` | mixed                                                                                                                                                                 |
+| 13  | `Привет␣:-)`           | ⟶                  | **emoticon guard (§3.6).** `:` is `EMOTICON-EYE`, `-` is `EMOTICON-NOSE`, `)` is `EMOTICON-MOUTH`, and there is nothing after it — the guard fires and the space survives |
+| 13a | `Привет␣:)`            | ⟶                  | same, no nose                                                                                                                                                        |
+| 13b | `Hello␣:Deal␣with␣it`  | `Hello:Deal␣with␣it` | `D` is `EMOTICON-MOUTH`, but `e` immediately after it is a `LETTER` — the guard does not fire, and ordinary `STRIP-BEFORE` behaviour applies                        |
+| 13c | `10:30`                | ⟶                  | no space run at all — outside this rule's scope regardless of the guard                                                                                             |
+| 13d | `See␣you␣at␣10␣:␣30`  | `See␣you␣at␣10:␣30` | `:` is `EMOTICON-EYE`, but the very next code point is a space, not `EMOTICON-MOUTH` — the guard does not fire; ordinary `STRIP-BEFORE` strips the leading space, and the trailing space (right neighbour `3`, not `STRIP-BEFORE`) is untouched |
+| 13e | `Sorry␣:(␣it␣happens`  | ⟶                  | **mouth side (§3.6).** `(` is the mouth of a recognised emoticon, so the opening-bracket clause does not delete the space after it. Previously produced `Sorry␣:(it␣happens`, and then `Sorry:(it␣happens` on a second pass |
+| 13f | `Hmm␣:[␣well`          | ⟶                  | same, for the other mouth that is also an `OPEN-BRACKET` member — `[` |
+| 13g | `Well␣:-(␣then`        | ⟶                  | same, with a nose: the backward walk steps over `-` and finds the eye at `cp[s-3]`                                                                                                                                                   |
+| 13h | `a␣-(␣b`               | `a␣-(b`            | a nose with no eye behind it is not a face — the mouth side does not fire and the opening-bracket clause applies as usual                                                                                                            |
+| 13i | `word␣(␣note␣)`        | `word␣(note)`      | the ordinary bracket-inner case, unchanged by the mouth side: `(` here is preceded by a space, not by an eye                                                                                                                          |
+| 13j | `Note:(␣x␣)`           | `Note:(␣x)`        | the mouth side puts **no** condition on what precedes the eye, so it fires on a word-attached eye too: the space after the mouth survives while the one before the closer still goes — §7 item 11                                    |
+
+Cases 4, 5, 6, 8, 10a, 10b, 10c, 10e, 10f, 10g, 10h, 10i, 11, 13, 13a, 13e, 13f and 13g are "no change" cases.
+
+---
+
+## 7. Open questions
+
+1. **U+0009 (tab) is completely untouched.** In `text` mode a run of tabs between two words
+   is arguably the same typing accident as a run of spaces. I chose safety, because the rule
+   cannot distinguish prose from Markdown indentation. If the dogfooding gate (PLAN.md M4)
+   shows tab noise in real content, the fix is a separate opt-in rule, not a change here.
+2. **U+2009 (thin space) and friends are untouched.** Some authors paste text from InDesign
+   or LaTeX carrying real thin spaces. Normalising them to U+202F would be locale-dependent
+   and is arguably a `nbsp` concern. Unresolved; currently they are simply preserved.
+3. **`STRIP-BEFORE` includes U+003A (colon).** `"10 : 30"` becomes `"10:30"`. I believe this
+   is right for prose but it is a real behaviour change on tabular text. Needs a fixture
+   decision from the operator.
+4. **`STRIP-BEFORE` excludes U+2014/U+2013.** A spaced em dash is a legitimate parenthetical
+   form in several locales, so stripping there would be wrong; the `dashes` rule owns dash
+   spacing. Confirmed by construction, but worth a fixture.
+5. **Should a space before an opening bracket be normalised?** `"word(note)"` versus
+   `"word (note)"` is an authorial choice, not a typographic error, so this rule does
+   nothing. Recorded so nobody adds it later "for symmetry".
+6. **`html` mode boundary semantics.** A text node ending in a space followed by a sibling
+   text node beginning with a space is, at the DOM level, two runs of length 1 that render
+   as one collapsed space. This rule sees them separately and leaves both. Whether the mode
+   adapter should present adjacent text nodes as one logical unit is an L2 question that
+   this document cannot settle; it is flagged here because the answer changes `spaces`
+   fixtures for `html` mode.
+7. **The lone-dot condition (§3.4) changes `Wait␣...` to `Wait␣…` rather than `Wait…`.** The
+   author's space survives. I judge that correct — it is the same principle as §7.5, and it is
+   what makes `See␣../docs` safe — but it is a visible change from the previous behaviour and
+   it deserves a fixture and an operator glance. If tight is preferred, the fix is **not** to
+   restore stripping before a dot run (that reopens `See␣../docs`) but to have `ellipsis`
+   absorb a preceding space, which is a different rule's business and a different decision.
+8. **The Greek reading of U+003B is honoured here and ignored by `ellipsis`.** §3.5 part 2 is
+   true of this rule and does not generalise; this entry is where the generalisation fails, and
+   it was found by review rather than by construction, so assume there are others.
+   `ellipsis.md` §3.1 defines `TERMINAL` as `{U+0021, U+003F}`. A Greek author writes a question
+   with U+003B, so `Πράγματι;..` keeps its two-dot run while `Πράγματι?..` — which uses a
+   character Greek does not use for questions — becomes `Πράγματι?…`. Greek gets the treatment
+   only when it is written wrongly. Verified against the engine, and pinned by the fixture
+   `el-ellipsis-greek-question-mark-not-terminal`.
+
+   It is a **miss, not damage**: the input round-trips unchanged, and the two-dot run is left
+   exactly as written. That is why it is recorded rather than fixed here.
+
+   **The obvious fix — adding U+003B to `TERMINAL` — was researched and is REFUSED.** This is a
+   settled decision, not an open question, and it is recorded here so it is not reopened:
+
+   - **It would be a regression in Russian.** The abbreviated two-dot form is tied to two named
+     marks, not to a class of "terminal punctuation". Лопатин, «Правила русской орфографии и
+     пунктуации. Полный академический справочник» §154: «При сочетании вопросительного или
+     восклицательного знака с многоточием знаки эти ставятся на месте первой точки» — and
+     §§155–158, which cover every other combination, never mention the semicolon. Розенталь
+     §68.1 says the same. So `текст;...` must stay `текст;…` in Russian, and putting U+003B in
+     `TERMINAL` would invent a rule that no Russian authority states.
+   - **No Greek source asks for it either.** The Ministry of Education grammar and the Κέντρο
+     Ελληνικής Γλώσσας materials describe αποσιωπητικά without giving any rule for their
+     interaction with the ερωτηματικό, and Greek has no counterpart to the Russian
+     dot-absorption convention at all. «πάντοτε τρεις» is stated against runs of four and five
+     dots, not against a neighbouring mark.
+   - So the change is **unsupported on both sides**: it would break the one locale with a cited
+     rule in order to serve a locale whose sources are silent.
+
+   What remains is the two-dot input `Πράγματι;..`, which no authority addresses in either
+   language. It round-trips unchanged, which is the correct behaviour for an unspecified case.
+   The correctly-written three-dot form `Πράγματι;...` already converts to U+2026, because a
+   three-dot run needs no help from `TERMINAL`.
+9. **A verified Greek source contradicts §3.4, and the divergence is deliberate.** The EU
+   Interinstitutional Style Guide (Greek edition) §10.1.9 ii) states «Μεταξύ των αποσιωπητικών
+   και της λέξης που προηγείται δεν αφήνουμε διάστημα» — *no space is left between the ellipsis
+   and the word before it*. §3.4 removes U+2026 from `STRIP-BEFORE` and preserves a space before
+   a dot run **in every locale**, so `Πράγματι …` is returned as typed. The rule and the source
+   disagree, the source was read and verified, and this entry exists so that the disagreement is
+   recorded rather than unremarked.
+
+   **The divergence stands, and the space is preserved.** Three reasons, in the order that
+   decided it:
+
+   - **Honouring it requires a rule that deletes on locale data, and this rule has none.**
+     `order.json` gives `spaces` `"localeData": []`; §2 states that its behaviour is identical in
+     every locale, which is not decoration but the reason it can be reasoned about at all. The
+     alternatives are to give `spaces` locale data — an `order.json` change, and the end of a
+     property the whole document relies on — or to make `ellipsis` delete the preceding space,
+     which turns a rule that only ever replaces into a rule that deletes, and thereby drags in
+     `modes.md` §3.3's edge-test clause, `I₂`, and a fresh CO discharge. Neither is a small change,
+     and neither is justified by one locale.
+   - **The instruction is about setting text, not about repairing it.** The guide tells a Greek
+     typist not to leave a space there. It does not ask a tool to remove one the writer left. That
+     distinction is the same one §3.5 part 2 draws for the ερωτηματικό, and it is the reason this
+     document is comfortable saying "no source contradicts it" there and must not say "a source
+     requires it" here.
+   - **The divergence is conservative in the direction the M4 gate cares about.** Preserving
+     costs a missed correction on Greek text containing a typo; honouring it would mean deleting
+     a character the author typed, in one locale only, through machinery no other locale exercises.
+     `dashes` §3.2 step 2a was just narrowed on exactly that principle after 1063 lines of the
+     author's corpus were rewritten against his intent.
+
+   **What would change the answer:** a second locale wanting the same behaviour. One locale does
+   not pay for a schema field, a deleting `ellipsis`, and a new composition argument; two might,
+   and at that point the right shape is `ellipsis.noSpaceBefore` consumed by `ellipsis` — which
+   already reads locale data — rather than anything in this rule. Recorded in `ellipsis.md` §7 and
+   in `spec/locales/el.json`'s `ellipsis` note, so that all three say the same thing.
+10. **An emoticon directly inside a bracket pair still loses the space before its eye.**
+    `(␣:(␣b␣)` yields `(:(␣b)`: the opening-bracket clause acts on the outer `(`, and §3.6's eye
+    side never sees that run because it only suppresses the `STRIP-BEFORE` clause. Pre-existing
+    behaviour, identical for `(␣:)␣b␣)`, and it is a bracket-inner deletion of exactly the kind
+    case 3 asks for — so it was left alone rather than folded into the mouth-side fix. Recorded so
+    that anyone tempted to widen the guard "for symmetry" starts from the fact that it is the outer
+    bracket, not the emoticon, that owns that space.
+11. **The mouth side asks nothing about what precedes the eye, and that is deliberate.** `Note:( x )`
+    yields `Note:( x)` — asymmetric, because the mouth side keeps the inner space on the left while
+    the `CLOSE-BRACKET` clause still takes the one on the right. The alternative, requiring the eye
+    to begin a token (`SPACE`, `BREAK` or `NONE` before it), would restore the symmetry for that
+    input and lose `Hi!:( yes`, where the eye is attached to the preceding word and the shape is
+    still a face. Deleting is the irreversible direction, so the reading that deletes less wins —
+    the same principle as §3.4 and §7.9. Pinned by the fixture `en-us-spaces-emoticon-mouth-eye-attached-to-word`,
+    which is the case that discriminates the two readings; without it a port could take the narrower
+    one and still pass the whole suite.

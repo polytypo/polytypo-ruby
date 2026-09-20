@@ -9,6 +9,7 @@ require_relative "polytypo/engine/rules" # side effect: registers all 9 rules
 require_relative "polytypo/modes/spans"
 require_relative "polytypo/modes/runner"
 require_relative "polytypo/modes/html"
+require_relative "polytypo/modes/yaml"
 
 # polytypo normalizes typography across languages: locale-correct quotes, dashes, ellipses,
 # apostrophes, symbols and no-break spaces, from a spec shared across every polytypo runtime
@@ -18,9 +19,12 @@ module Polytypo
   # Applies polytypo's rule pipeline to +input+ and returns the result.
   #
   # +locale+ is required, with no default -- an unknown locale raises Polytypo::Error with
-  # CODE_UNKNOWN_LOCALE; there is never a fallback to English. +mode+ is "text" (default), "html"
-  # or "markdown". +dialect+ is required iff mode is "markdown" ("commonmark"; "mdx" is not
-  # implemented by this runtime). +rules+ is an opt-out Hash keyed by rule id.
+  # CODE_UNKNOWN_LOCALE; there is never a fallback to English. +mode+ is "text" (default),
+  # "html", "markdown" or "yaml". +dialect+ is required iff mode is "markdown" ("commonmark";
+  # "mdx" is not implemented by this runtime). +keys+ is required iff mode is "yaml" and names
+  # the mapping keys whose scalar values are prose (modes.md 3.8.2) -- it has no default, because
+  # nothing in YAML's syntax separates "description:" from "run:". +rules+ is an opt-out Hash
+  # keyed by rule id.
   #
   # Pure: no I/O, no environment, no clock, no globals, no class-level mutable state --
   # thread-safe and reentrant, callable concurrently from any number of Threads with no external
@@ -28,7 +32,7 @@ module Polytypo
   #
   # Only `mode: "text"`/`"html"` ever touch this file's own requires; `mode: "markdown"` lazily
   # requires "commonmarker" from within Modes::Markdown, never at load time of this file.
-  def self.transform(input, locale:, mode: "text", dialect: nil, rules: nil, narrow_nbsp: nil)
+  def self.transform(input, locale:, mode: "text", dialect: nil, keys: nil, rules: nil, narrow_nbsp: nil)
     resolved_mode = resolve_mode(mode)
     narrow_target = Engine.resolve_narrow_target(narrow_nbsp)
 
@@ -43,6 +47,11 @@ module Polytypo
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
       transform_html(input, locale, rules, narrow_target)
+    when "yaml"
+      if dialect
+        raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
+      end
+      transform_yaml(input, locale, keys, rules, narrow_target)
     else # "markdown"
       transform_markdown(input, locale, dialect, rules, narrow_target)
     end
@@ -60,7 +69,7 @@ module Polytypo
   # for the text (analyze.md sections 4 and 5).
   #
   # Pure and thread-safe on the same terms as .transform.
-  def self.analyze(input, locale:, mode: "text", dialect: nil, rules: nil, narrow_nbsp: nil)
+  def self.analyze(input, locale:, mode: "text", dialect: nil, keys: nil, rules: nil, narrow_nbsp: nil)
     resolved_mode = resolve_mode(mode)
     narrow_target = Engine.resolve_narrow_target(narrow_nbsp)
 
@@ -75,6 +84,11 @@ module Polytypo
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
       analyze_html(input, locale, rules, narrow_target)
+    when "yaml"
+      if dialect
+        raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
+      end
+      analyze_yaml(input, locale, keys, rules, narrow_target)
     else # "markdown"
       analyze_markdown(input, locale, dialect, rules, narrow_target)
     end
@@ -84,10 +98,11 @@ module Polytypo
     case mode
     when nil, "text"
       "text"
-    when "html", "markdown"
+    when "html", "markdown", "yaml"
       mode
     else
-      raise Error.new(CODE_INVALID_MODE, "unknown mode #{mode.inspect}. Expected \"text\", \"html\" or \"markdown\"")
+      raise Error.new(CODE_INVALID_MODE,
+                      "unknown mode #{mode.inspect}. Expected \"text\", \"html\", \"markdown\" or \"yaml\"")
     end
   end
   private_class_method :resolve_mode
@@ -111,6 +126,22 @@ module Polytypo
     Modes::Runner.run_over_spans(cp, spans, plan, locale_data, ctx)
   end
   private_class_method :transform_html
+
+  # "yaml" mode: the only pipeline here with no parser dependency at all -- span selection is the
+  # specified scan of modes.md 3.8, not a library. There is likewise no CODE_MALFORMED_INPUT
+  # counterpart: with no declared grammar to violate, a file that is not YAML yields few spans or
+  # none and comes back byte for byte (modes.md 3.8.3). The only raise this mode adds is +keys+,
+  # which is about the call and not the input.
+  def self.transform_yaml(input, locale, keys, rules, narrow_target)
+    resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
+    resolved_keys = Engine.resolve_yaml_keys(keys)
+    spans = Modes::Yaml.yaml_spans(input, resolved_keys)
+    ctx = Engine::RuleContext.new(mode: "yaml", dialect: nil, locale: resolved_locale,
+                                  narrow_target: narrow_target)
+    cp = Engine::Codepoints.to_codepoints(input)
+    Modes::Runner.run_over_spans(cp, spans, plan, locale_data, ctx)
+  end
+  private_class_method :transform_yaml
 
   def self.transform_markdown(input, locale, dialect, rules, narrow_target)
     # Validation order is public, tested behaviour, identical across every runtime: rules (an
@@ -143,6 +174,18 @@ module Polytypo
     Modes::Runner.analyze_over_spans(Engine::Codepoints.to_codepoints(input), spans, plan, locale_data, ctx)
   end
   private_class_method :analyze_html
+
+  # analyze.md section 1, "yaml" mode: offsets are into the document, not into a span
+  # (analyze.md section 6).
+  def self.analyze_yaml(input, locale, keys, rules, narrow_target)
+    resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
+    resolved_keys = Engine.resolve_yaml_keys(keys)
+    spans = Modes::Yaml.yaml_spans(input, resolved_keys)
+    ctx = Engine::RuleContext.new(mode: "yaml", dialect: nil, locale: resolved_locale,
+                                  narrow_target: narrow_target)
+    Modes::Runner.analyze_over_spans(Engine::Codepoints.to_codepoints(input), spans, plan, locale_data, ctx)
+  end
+  private_class_method :analyze_yaml
 
   def self.analyze_markdown(input, locale, dialect, rules, narrow_target)
     # Validation order is public, tested behaviour and is shared with .transform: rules, then

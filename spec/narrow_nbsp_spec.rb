@@ -79,7 +79,7 @@ RSpec.describe "Polytypo narrow_nbsp" do
     end
 
     it "is checked after mode and before rules and locale" do
-      expect(code_of(locale: "fr", mode: "yaml", narrow_nbsp: "wide")).to eq(Polytypo::CODE_INVALID_MODE)
+      expect(code_of(locale: "fr", mode: "asciidoc", narrow_nbsp: "wide")).to eq(Polytypo::CODE_INVALID_MODE)
       expect(code_of(locale: "fr", narrow_nbsp: "wide", rules: { "nope" => true }))
         .to eq(Polytypo::CODE_INVALID_OPTION)
       expect(code_of(locale: "xx", narrow_nbsp: "wide")).to eq(Polytypo::CODE_INVALID_OPTION)

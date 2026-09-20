@@ -37,6 +37,9 @@ RSpec.describe "packaged gem" do
         out_md = Polytypo.transform("Body \\"x\\".\\n", locale: "en-US", mode: "markdown", dialect: "commonmark")
         raise "markdown mode failed: \#{out_md.inspect}" unless out_md.include?("“x”")
 
+        out_yaml = Polytypo.transform("a: x...y\\n", locale: "en-US", mode: "yaml", keys: ["a"])
+        raise "yaml mode failed: \#{out_yaml.inspect}" unless out_yaml.include?("x…y")
+
         puts "ALL_OK"
       RUBY
 
