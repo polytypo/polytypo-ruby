@@ -27,7 +27,7 @@ RSpec.describe "Polytypo.analyze" do
     end
 
     it "raises POLYTYPO_INVALID_MODE for an unknown mode" do
-      expect { Polytypo.analyze("x", locale: "en-US", mode: "yaml") }
+      expect { Polytypo.analyze("x", locale: "en-US", mode: "asciidoc") }
         .to raise_error(Polytypo::Error) { |e| expect(e.code).to eq(Polytypo::CODE_INVALID_MODE) }
     end
 
@@ -79,6 +79,7 @@ RSpec.describe "Polytypo.analyze" do
           opts = { locale: data["locale"], mode: c["mode"] }
           opts[:dialect] = c["dialect"] if c["dialect"]
           opts[:rules] = c["rules"] if c["rules"]
+          opts[:keys] = c["keys"] if c["keys"]
 
           changed = Polytypo.transform(c["in"], **opts) != c["in"]
           reported = !Polytypo.analyze(c["in"], **opts).empty?

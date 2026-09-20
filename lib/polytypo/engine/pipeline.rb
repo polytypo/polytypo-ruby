@@ -31,6 +31,34 @@ module Polytypo
       )
     end
 
+    # modes.md 3.8.2: "yaml" mode's `keys` option, resolved once at the call boundary.
+    #
+    # It has no default, for the reason `dialect` has none. YAML is a data format with islands of
+    # prose in it, and nothing in its syntax marks them -- `description` holds a sentence and
+    # `run` holds a shell script, spelled identically -- so a default would be a guess about the
+    # schema above the document. An empty list is legal: "process nothing" is a choice a caller
+    # may make, not an error. Checked after locale, last of the option checks, alongside dialect.
+    def self.resolve_yaml_keys(value)
+      unless value.is_a?(Array)
+        raise Polytypo::Error.new(
+          Polytypo::CODE_INVALID_OPTION,
+          '"keys" is required when mode is "yaml" and must be an Array of Strings ' \
+          "(modes.md 3.8.2). Received #{value.inspect}.",
+        )
+      end
+
+      value.each do |key|
+        next if key.is_a?(String)
+
+        raise Polytypo::Error.new(
+          Polytypo::CODE_INVALID_OPTION,
+          "\"keys\" must contain only Strings; received #{key.inspect}.",
+        )
+      end
+
+      value.to_set
+    end
+
     # Resolves the locale, builds the rule plan, and runs each enabled rule in
     # spec/rules/order.json order over a code-point array, applying its edits before the next
     # rule sees it. No module-level mutable state beyond the immutable, load-once-on-first-use

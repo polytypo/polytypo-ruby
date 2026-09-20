@@ -12,6 +12,9 @@ module Polytypo
     module Spans
       LINE_TERMINATORS = [0x0A, 0x0D, 0x0B, 0x0C, 0x85, 0x2028, 0x2029].freeze
 
+      # U+0020, the one emitted code point whose meaning is positional (modes.md 3.4, 5 item 2).
+      SPACE = 0x20
+
       # A processable span, identified by its offsets in the original source, addressed as
       # code-point indices (ARCHITECTURE.md section 4.2) -- Ruby String indices are already
       # code-point indices for a UTF-8 String, no separate byte/char distinction to manage here.
@@ -108,7 +111,13 @@ module Polytypo
       #  1. No edit may contain a marker -- one that does is a bug, discarded rather than
       #     redistributed.
       #  2. The edge-growth rule: an edit is discarded if it would place code points at an
-      #     extremity of its span that were not there before.
+      #     extremity of its span that were not there before. That sentence is the rule;
+      #     "r > d" alone is an incorrect formalisation of it and misses r == d. dashes P3
+      #     admits a run of THREE dashes, so "---" -> U+0020 en-dash U+0020 is 3 -> 3: the
+      #     length test sees nothing while U+0020 lands on both extremities anyway. The second
+      #     clause tests the CHARACTER, and only U+0020 needs testing -- it is the one code
+      #     point any rule emits whose meaning comes from its position rather than from itself
+      #     (modes.md 5 item 2).
       def self.filter_boundary_edits(cp, edits, ranges)
         edits.select do |edit|
           next false if (edit.start...edit.end).any? { |i| Engine.marker?(cp[i]) }
@@ -118,7 +127,12 @@ module Polytypo
           d = edit.end - edit.start
           r = edit.replacement.length
           span = span_containing(ranges, p)
-          !(span && r > d && (p == span.first || q == span.last))
+          next true unless span && (p == span.first || q == span.last)
+          next false if r > d
+          next false if r.positive? && p == span.first && edit.replacement[0] == SPACE && cp[p] != SPACE
+          next false if r.positive? && q == span.last && edit.replacement[r - 1] == SPACE && cp[q] != SPACE
+
+          true
         end
       end
 

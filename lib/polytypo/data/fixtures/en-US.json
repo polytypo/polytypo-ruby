@@ -1,5 +1,5 @@
 {
-  "spec": "1.2.0",
+  "spec": "1.3.0",
   "locale": "en-US",
   "cases": [
     {
@@ -1866,6 +1866,631 @@
       "in": "Use .<b>NET</b> today",
       "out": "Use.<b>NET</b> today",
       "note": "spaces.md §3.4 word-start clause (spec 1.2.0): the code point after the dot is the −1 span boundary marker, which is neither a LETTER nor an ASCII digit (modes.md §3.3), so the dot counts as terminal and the space before it is deleted."
+    },
+    {
+      "id": "en-us-markdown-mdx-frontmatter",
+      "rule": "quotes",
+      "mode": "markdown",
+      "dialect": "mdx",
+      "in": "---\ntitle: \"Une note\"\n---\n\n<Callout>Body \"quotes\" here</Callout>\n",
+      "out": "---\ntitle: \"Une note\"\n---\n\n<Callout>Body “quotes” here</Callout>\n",
+      "note": "modes.md §3.7.3: frontmatter is skipped whole under \"mdx\" too, not only under \"commonmark\" (compare en-us-markdown-commonmark-frontmatter, the same block in the other dialect). Frontmatter followed by JSX is the realistic MDX document shape, and the JSX element's children are processable prose per the same section."
+    },
+    {
+      "id": "en-us-markdown-mdx-frontmatter-abuts-content",
+      "rule": "quotes",
+      "mode": "markdown",
+      "dialect": "mdx",
+      "in": "---\ntitle: \"Une note\"\n---\n<Callout>Body \"quotes\" here</Callout>\n",
+      "out": "---\ntitle: \"Une note\"\n---\n<Callout>Body “quotes” here</Callout>\n",
+      "note": "modes.md §3.7.3: the skipped block ends at its closing delimiter, so content on the very next line with no blank line between is ordinary MDX and converts. Pins that the skip is delimited by the block itself and not by a following blank line."
+    },
+    {
+      "id": "en-us-markdown-commonmark-frontmatter-toml",
+      "rule": "quotes",
+      "mode": "markdown",
+      "dialect": "commonmark",
+      "in": "+++\ntitle = \"Une note\"\n+++\n\nBody \"quotes\" here.\n",
+      "out": "+++\ntitle = \"Une note\"\n+++\n\nBody “quotes” here.\n",
+      "note": "modes.md §3.7.3 names both delimiters: a frontmatter block is delimited by --- (YAML) or +++ (TOML) and is skipped whole either way. The machine-read TOML field keeps its straight quotes while body prose converts."
+    },
+    {
+      "id": "en-us-markdown-commonmark-frontmatter-unterminated",
+      "rule": "quotes",
+      "mode": "markdown",
+      "dialect": "commonmark",
+      "in": "---\ntitle: \"Unclosed\"\n\nBody \"quotes\" here.\n",
+      "out": "---\ntitle: “Unclosed”\n\nBody “quotes” here.\n",
+      "note": "modes.md §3.7.3 skips a frontmatter block; an opening delimiter with no closing one is not a block. The leading --- is then an ordinary thematic break and everything after it is prose, so the metadata-looking line converts like any other paragraph. Pinned so the skip cannot be widened into \"anything after a leading ---\"."
+    },
+    {
+      "id": "en-us-ranges-closed-up-currency",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "$15-$20",
+      "out": "$15⁠–⁠$20",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): both members repeat the same closed-up symbol, so the walk consumes the U+0024 on the right flank and the token is a range candidate. Chicago 9.19 — \"an abbreviation or symbol is repeated if it is closed up to the number\" — makes `$15–$20` the form, and before 1.3.0 this input was left with a hyphen, which no reading of that source allows. The U+2060 pair is ranges.md §3.3.1's tight binding and is invisible on screen: review this row in spec/fixtures/.escaped/."
+    },
+    {
+      "id": "en-us-ranges-closed-up-percent",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "35%-50%",
+      "out": "35%⁠–⁠50%",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): the mirror of the currency case — the closed-up symbol is a SUFFIX, so the walk moves the LEFT flank and matches it against the outer symbol after Rrun. `35%–50%` is the literal example in the Chicago sentence §3.2a quotes; the rule is closed-up versus spaced, not currency versus unit."
+    },
+    {
+      "id": "en-us-ranges-closed-up-degree",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "15°-20°",
+      "out": "15°⁠–⁠20°",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): U+00B0 is in CLOSED-SYMBOL on the same ground as U+0024 and U+0025 — a symbol conventionally written closed up to a number. Pinned because the set is a literal enumeration, not a Unicode category test, so every member needs a case or the enumeration drifts per runtime."
+    },
+    {
+      "id": "en-us-ranges-closed-up-mismatched",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "$15-€20",
+      "out": "$15-€20",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): the symbols must be the SAME code point. This is a currency conversion, not a range, and converting its hyphen would assert something false. The walk is not taken, so the right flank stays a non-DIGIT and the token is not a range candidate at all — it remains `dashes`' concern, exactly as before 1.3.0."
+    },
+    {
+      "id": "en-us-ranges-closed-up-half-written",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "15-$20",
+      "out": "15-$20",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): an inner symbol with no matching outer symbol on the opposite member. Declined for the same reason as the mismatched case, and this is the row that proves the match is required in BOTH directions rather than only when both members carry a symbol."
+    },
+    {
+      "id": "en-us-ranges-closed-up-multi-code-point",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "US$15-US$20",
+      "out": "US$15-US$20",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a and §7.7 (spec 1.3.0): the walk consumes at most one code point per side, and the mechanism here is CANDIDACY, not a guard — `cp[R]` is `U`, which is not in CLOSED-SYMBOL, so no walk is taken and the flank is simply not a DIGIT. The half-written `US$15-$20` IS a candidate and is declined by G1 instead, because `before` reads past the matched U+0024 and finds `S`; see en-us-ranges-closed-up-letter-prefix for that half."
+    },
+    {
+      "id": "en-us-ranges-closed-up-elided-unchanged",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "$15-20 and 15-20%",
+      "out": "$15⁠–⁠20 and 15⁠–⁠20%",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): the elided forms, where the symbol is written once. They converted before 1.3.0 and must keep converting — the Chicago answer §3.2a quotes calls them acceptable variants, and this row is the regression witness that adding the closed-up walk did not make the outer symbol a requirement."
+    },
+    {
+      "id": "en-us-ranges-closed-up-spaced-token",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "$15 - $20",
+      "out": "$15⁠–⁠$20",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): the spaced form of the same token. Before 1.3.0 this was `dashes`' token and became `$15—$20` (en-US's em-tight parenthetical form) with DEFAULT options; now it is a range candidate, so it converts to the range form when `ranges` is on and is a no-op when it is off. See en-us-dashes-closed-up-range-declined for the other half of that pair."
+    },
+    {
+      "id": "en-us-dashes-closed-up-range-declined",
+      "rule": "dashes",
+      "mode": "text",
+      "in": "$15 - $20",
+      "out": "$15 - $20",
+      "note": "ranges.md §3.2a and dashes.md §1 (spec 1.3.0): the ACCEPTED COST of widening range candidacy. With default options this input produced `$15—$20` through spec 1.2.0; a range candidate is declined by `dashes` unconditionally, whether or not `ranges` is enabled, so it is now a no-op. That is the behaviour `$15 - 20` has had since spec 0.5.0 — the change makes the two consistent."
+    },
+    {
+      "id": "en-us-ranges-closed-up-letter-prefix",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "US$15-$20",
+      "out": "US$15-$20",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): the other half of the multi-code-point case. Here the right walk DOES match — the outer symbol in front of `15` is the same U+0024 — so the token is a range candidate and reaches the guards, where G1 declines it: `before` reads past the matched symbol and finds `S`, a LETTER. Pinned because §3.2a claims two different mechanisms for two inputs that look alike."
+    },
+    {
+      "id": "en-us-ranges-closed-up-joiner-wrapped-hyphen",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "$15⁠-⁠$20",
+      "out": "$15⁠–⁠$20",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.1 and §3.2a, via dashes.md §3.2a (spec 1.3.0): the ONLY input that separates the amended re-entry condition from the unamended one. ranges.md §3.1 borrows the joiner-crossing walk from dashes.md §3.2a, and before 1.3.0 that walk required DIGIT on both effective neighbours — with a symbol there, a hyphen an author typed between an existing U+2060 pair fell through to \"joiner crossed in any other configuration: emit nothing\". Without this case a port could skip the amendment and pass the whole suite."
+    },
+    {
+      "id": "en-us-ranges-closed-up-both-flanks",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "%15%-%20%",
+      "out": "%15%⁠–⁠%20%",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): both flanks are in CLOSED-SYMBOL, which is the shape that makes the evaluation order observable. §3.2a decides both sides from the ORIGINAL L and R simultaneously, so both walks are taken and both match; a left-then-right or right-then-left reading would leave one side's `Lrun` undefined and decline. Not idiomatic text — pinned purely to make the evaluation model conformance-testable."
+    },
+    {
+      "id": "en-us-ranges-closed-up-symbol-set-cents-pounds",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "¢15-¢20 and ¤15-¤20 and ¥15-¥20",
+      "out": "¢15⁠–⁠¢20 and ¤15⁠–⁠¤20 and ¥15⁠–⁠¥20",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): CLOSED-SYMBOL is a literal enumeration, not a Unicode category test, so each member needs a case or a port enumerating only the obvious few passes the whole suite. U+00A2, U+00A4 and U+00A5; U+0024 and U+20AC have their own cases, U+00A3 is pinned in en-GB."
+    },
+    {
+      "id": "en-us-ranges-closed-up-symbol-set-permille",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "15‰-20‰ and 15‱-20‱",
+      "out": "15‰⁠–⁠20‰ and 15‱⁠–⁠20‱",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): U+2030 and U+2031, the per-mille and per-ten-thousand signs, in the suffix position. Same reason as the currency case — the set is an enumeration and every member is part of the contract."
+    },
+    {
+      "id": "en-us-dashes-t1-closed-up-symbol-unaffected",
+      "rule": "dashes",
+      "mode": "text",
+      "in": "price--$50--drop",
+      "out": "price—$50—drop",
+      "note": "dashes.md §3.2 step 8 (spec 1.3.0): the boundary of the accepted cost, with DEFAULT options. T1 applies only when the chosen form is `-spaced`; `en-US` sets `em-tight`, so this input is untouched by the amendment and still converts exactly as it did through spec 1.2.0. Pinned because the alternative repair — putting CLOSED-SYMBOL in the cluster guard's alphabet (§3.2 step 7) — is unconditional and would have made this a no-op in every locale. Without this case a port could take that shortcut and pass the suite."
+    },
+    {
+      "id": "en-us-ranges-closed-up-block-member",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "₹15-₹20 and ₴100-₴200",
+      "out": "₹15⁠–⁠₹20 and ₴100⁠–⁠₴200",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): U+20B9 and U+20B4, members of the U+20A0–U+20CF block that are NOT among the code points any other fixture names. CLOSED-SYMBOL is the whole block by its bounds, so a port that enumerates only the symbols it saw in fixtures — dollar, euro, the Latin-1 four — passes every other case and fails this one."
+    },
+    {
+      "id": "en-us-ranges-closed-up-not-a-member",
+      "rule": "ranges",
+      "mode": "text",
+      "in": "֏15-֏20 and ￥15-￥20",
+      "out": "֏15-֏20 and ￥15-￥20",
+      "rules": {
+        "ranges": true
+      },
+      "note": "ranges.md §3.2a (spec 1.3.0): the NEGATIVE side of the enumeration. U+058F (Armenian dram) and U+FFE5 (fullwidth yen) are currency signs in Unicode's own classification and are deliberately NOT in CLOSED-SYMBOL, which is a literal code-point set precisely so that no runtime has to agree with another about a Unicode category. A port implementing the set as an Sc test — the implementation §3.2a forbids — converts these and fails here."
+    },
+    {
+      "id": "en-us-yaml-plain-value",
+      "rule": "quotes",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: He said \"hi\" to us\n",
+      "out": "description: He said “hi” to us\n",
+      "note": "modes.md §3.8.4: a plain scalar under a listed key is a processable span and converts exactly as text mode does."
+    },
+    {
+      "id": "en-us-yaml-unlisted-key-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: one...two\nrun: three...four\n",
+      "out": "description: one…two\nrun: three...four\n",
+      "note": "modes.md §3.8.2: `keys` is the whole of what makes a scalar processable. A port that processes every string scalar changes the `run:` value too, which is the defect this option exists to prevent."
+    },
+    {
+      "id": "en-us-yaml-empty-keys-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [],
+      "in": "description: one...two\n",
+      "out": "description: one...two\n",
+      "note": "modes.md §3.8.2: an empty `keys` list is legal and yields no spans — \"process nothing\" is a choice a caller may make, not an error."
+    },
+    {
+      "id": "en-us-yaml-key-never-processed",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "a...b"
+      ],
+      "in": "a...b: one...two\n",
+      "out": "a...b: one…two\n",
+      "note": "modes.md §3.8.4 step 5: keys are never processable, including the key that was matched against `keys`."
+    },
+    {
+      "id": "en-us-yaml-colon-inside-key",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "a:b"
+      ],
+      "in": "a:b: one...two\n",
+      "out": "a:b: one…two\n",
+      "note": "modes.md §3.8.4 step 5: a colon not followed by U+0020 or the line end is an ordinary key character, so the key here is `a:b`. A port that stops at the first colon finds no key and yields no spans."
+    },
+    {
+      "id": "en-us-yaml-quoted-scalar-with-colon",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "title"
+      ],
+      "in": "title: \"Chapter 1: one...two\"\n",
+      "out": "title: \"Chapter 1: one…two\"\n",
+      "note": "modes.md §3.8.6: the plain-scalar colon test does not apply to a quoted scalar — quoting neutralises the colon. A port that applies it declines this line."
+    },
+    {
+      "id": "en-us-yaml-block-literal-lines",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: |\n  one...two\n    three...four\n",
+      "out": "description: |\n  one…two\n    three…four\n",
+      "note": "modes.md §3.8.5: one span per content line, beginning after the block indentation; indentation beyond that is content and stays inside the span."
+    },
+    {
+      "id": "en-us-yaml-chomping-clip",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: |\n  one...two\n\n\nz: 1\n",
+      "out": "description: |\n  one…two\n\n\nz: 1\n",
+      "note": "modes.md §3.8.5: the trailing line terminators the chomping indicator governs are outside every span. Compare en-us-yaml-chomping-strip and en-us-yaml-chomping-keep: three indicators, identical content edit, identical trailing bytes."
+    },
+    {
+      "id": "en-us-yaml-chomping-strip",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: |-\n  one...two\n\n\nz: 1\n",
+      "out": "description: |-\n  one…two\n\n\nz: 1\n",
+      "note": "modes.md §3.8.5: `|-` differs from `|` only in bytes the mode never touches. A port that decodes the block and re-encodes it produces a different byte count here than for en-us-yaml-chomping-clip."
+    },
+    {
+      "id": "en-us-yaml-chomping-keep",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: |+\n  one...two\n\n\nz: 1\n",
+      "out": "description: |+\n  one…two\n\n\nz: 1\n",
+      "note": "modes.md §3.8.5: `|+` keeps every trailing line terminator, and they are outside every span. This is the case the reported corruption in §3.8.1 failed."
+    },
+    {
+      "id": "en-us-yaml-quotes-pair-across-block-lines",
+      "rule": "quotes",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: |\n  He said \"hi\n  there\" and left\n",
+      "out": "description: |\n  He said “hi\n  there” and left\n",
+      "note": "modes.md §3.2 model C: a block scalar's content lines are separate spans joined by a −2 marker, so a quotation opened on one line pairs with a mark on the next. A port that runs each line independently leaves both marks straight."
+    },
+    {
+      "id": "en-us-yaml-multiline-quoted-untouched",
+      "rule": "quotes",
+      "mode": "yaml",
+      "keys": [
+        "a",
+        "b"
+      ],
+      "in": "a: \"open here\n  b: some prose \"word\" close\"\n",
+      "out": "a: \"open here\n  b: some prose \"word\" close\"\n",
+      "note": "modes.md §3.8.4 step 7: a quoted scalar that does not close on its opening line consumes its continuation lines, which are never rescanned. A port that rescans them puts the scalar's own closing quote inside a span, and `quotes` can then leave the scalar unterminated."
+    },
+    {
+      "id": "en-us-yaml-multiline-flow-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "a",
+        "b",
+        "c"
+      ],
+      "in": "a: {\n  b: one...two,\n  c: x\n}\n",
+      "out": "a: {\n  b: one...two,\n  c: x\n}\n",
+      "note": "modes.md §3.8.4 step 7: a flow collection spanning several lines consumes them all. A port that bails only on the opening line processes the interior and can edit next to the structural comma."
+    },
+    {
+      "id": "en-us-yaml-block-ambiguous-indent-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: |\n    deep one...two\n  shallow three...four\n",
+      "out": "description: |\n    deep one...two\n  shallow three...four\n",
+      "note": "modes.md §3.8.5: a later content line dedented inside the block is ambiguous, so the whole block yields no spans rather than the scan guessing which line the author meant as content."
+    },
+    {
+      "id": "en-us-yaml-not-yaml-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "{{ not yaml at all ... }}\n\t\tmixed\tindentation...\n",
+      "out": "{{ not yaml at all ... }}\n\t\tmixed\tindentation...\n",
+      "note": "modes.md §3.8.3: a construct the scan does not recognise yields no spans and the input comes back byte for byte. `transform` never throws on input in this mode."
+    },
+    {
+      "id": "en-us-yaml-document-marker-prefix-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description",
+        "--- description"
+      ],
+      "in": "--- description: one...two\n",
+      "out": "--- description: one...two\n",
+      "note": "modes.md §3.8.4 step 3: a document marker introducing a node is declined along with the bare form, so no key of `--- description` can ever be formed."
+    },
+    {
+      "id": "en-us-yaml-astral-preserved",
+      "rule": "quotes",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: A rocket 🚀 and a \"quote\"\n",
+      "out": "description: A rocket 🚀 and a “quote”\n",
+      "note": "modes.md §4: offsets are code points, not code units. A runtime indexing UTF-16 code units mis-slices the span after the astral character."
+    },
+    {
+      "id": "en-us-modes-three-dash-span-edge-html",
+      "rule": "dashes",
+      "mode": "html",
+      "in": "a<em>---</em>b",
+      "out": "a<em>—</em>b",
+      "note": "modes.md §3.4: an em-tight locale emits no U+0020, so the character clause does not fire and the edit applies at the extremity. The clause tests the character, not the length — this is the case that shows why."
+    },
+    {
+      "id": "en-us-yaml-folded-clip",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: >\n  one...two\n\n\nz: 1\n",
+      "out": "description: >\n  one…two\n\n\nz: 1\n",
+      "note": "modes.md §3.8.5: `>` is handled identically to `|` because the difference between them lives entirely in bytes the mode never touches. Companion to en-us-yaml-folded-strip and en-us-yaml-folded-keep."
+    },
+    {
+      "id": "en-us-yaml-folded-strip",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: >-\n  one...two\n\n\nz: 1\n",
+      "out": "description: >-\n  one…two\n\n\nz: 1\n",
+      "note": "modes.md §3.8.5: identical content edit and identical trailing bytes to en-us-yaml-folded-clip and en-us-yaml-folded-keep — a port that decodes the block and re-encodes it produces three different byte counts."
+    },
+    {
+      "id": "en-us-yaml-folded-keep",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: >+\n  one...two\n\n\nz: 1\n",
+      "out": "description: >+\n  one…two\n\n\nz: 1\n",
+      "note": "modes.md §3.8.5: `>+` keeps every trailing line terminator, and they lie outside every span. Completes the six chomping indicators with en-us-yaml-chomping-clip, -strip and -keep."
+    },
+    {
+      "id": "en-us-yaml-quoted-key-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "\"description\": one...two\n",
+      "out": "\"description\": one...two\n",
+      "note": "modes.md §3.8.4 step 5 and §7.11: a key containing a quote is declined before it is ever compared against `keys`, so a document that quotes its keys gets nothing from this mode. An accepted cost, pinned so it is a decision rather than a surprise."
+    },
+    {
+      "id": "en-us-yaml-bang-in-key-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "a!b"
+      ],
+      "in": "a!b: one...two\n",
+      "out": "a!b: one...two\n",
+      "note": "modes.md §3.8.4 step 5: the character test applies at every position of the key, not only the first, so a key merely containing `!` is declined too. A port testing only the first position processes this line and diverges."
+    },
+    {
+      "id": "en-us-yaml-same-key-two-depths",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: one...two\nnested:\n  inner:\n    description: three...four\n",
+      "out": "description: one…two\nnested:\n  inner:\n    description: three…four\n",
+      "note": "modes.md §3.8.2: `keys` matches a bare name at any depth and nothing narrower. Both occurrences convert; a port that matches only at the top level converts one."
+    },
+    {
+      "id": "en-us-yaml-crlf-block",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: |\r\n  one...two\r\n",
+      "out": "description: |\r\n  one…two\r\n",
+      "note": "modes.md §3.8.4: a U+000D immediately before the U+000A is a terminator, not part of the line, so a CRLF file yields the same spans as the same bytes with LF and the carriage returns come back untouched. A port splitting lines on U+000A alone reads the header as `|` + U+000D and yields nothing."
+    },
+    {
+      "id": "en-us-yaml-sequence-entry",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "- description: one...two\n- - description: three...four\n",
+      "out": "- description: one…two\n- - description: three…four\n",
+      "note": "modes.md §3.8.4 step 4: block sequence entries are consumed rather than skipped, and they nest."
+    },
+    {
+      "id": "en-us-yaml-single-quoted",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: 'one...two'\n",
+      "out": "description: 'one…two'\n",
+      "note": "modes.md §3.8.6: a single-quoted scalar's content is one span; the quotes themselves are outside it."
+    },
+    {
+      "id": "en-us-yaml-single-quoted-escape-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: 'it''s one...two'\n",
+      "out": "description: 'it''s one...two'\n",
+      "note": "modes.md §3.8.6: `''` makes the source spell the content with more characters than it has, so the offset model of §3.1 cannot hold and the scalar yields no spans."
+    },
+    {
+      "id": "en-us-yaml-double-quoted-escape-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: \"one \\\"two\\\"... three\"\n",
+      "out": "description: \"one \\\"two\\\"... three\"\n",
+      "note": "modes.md §3.8.6: a backslash in a double-quoted scalar means the same thing — source characters and content characters stop being the same, exactly as an HTML character reference does in §3.6."
+    },
+    {
+      "id": "en-us-yaml-anchor-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description",
+        "use"
+      ],
+      "in": "description: &anchor one...two\nuse: *anchor\n",
+      "out": "description: &anchor one...two\nuse: *anchor\n",
+      "note": "modes.md §3.8.4 step 9: an anchored or aliased value is not a construct this scan claims, listed key or not."
+    },
+    {
+      "id": "en-us-yaml-tag-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: !!str one...two\n",
+      "out": "description: !!str one...two\n",
+      "note": "modes.md §3.8.4 step 9: a tagged value is declined for the same reason as an anchored one."
+    },
+    {
+      "id": "en-us-yaml-comment-only-value",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "# a comment...here\n%TAG ! tag:example.com,2000:\ndescription: # one...two\n",
+      "out": "# a comment...here\n%TAG ! tag:example.com,2000:\ndescription: # one...two\n",
+      "note": "modes.md §3.8.4 steps 2 and 9: a comment line, a directive line, and a value that is only a comment all yield no spans."
+    },
+    {
+      "id": "en-us-yaml-document-markers",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "---\ndescription: one...two\n...\n",
+      "out": "---\ndescription: one…two\n...\n",
+      "note": "modes.md §3.8.4 step 3: the bare document markers are declined as lines, and the mapping between them is scanned normally."
+    },
+    {
+      "id": "en-us-yaml-flow-one-line-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description",
+        "inner"
+      ],
+      "in": "description: [one...two, three]\ninner: {a: four...five}\n",
+      "out": "description: [one...two, three]\ninner: {a: four...five}\n",
+      "note": "modes.md §3.8.4 step 9: a flow collection is declined whole, on one line as much as across several."
+    },
+    {
+      "id": "en-us-yaml-explicit-indent-indicator",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: |2\n   one...two\n",
+      "out": "description: |2\n   one…two\n",
+      "note": "modes.md §3.8.5: an explicit indentation indicator sets `bi` to `indent + n`, so the leading space here is content and stays inside the span."
+    },
+    {
+      "id": "en-us-yaml-empty-value-nested-node",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "outer:\n  description: one...two\n",
+      "out": "outer:\n  description: one…two\n",
+      "note": "modes.md §3.8.4 step 6: a key with no inline value introduces a nested node whose lines ARE scanned on their own — the one case where following lines are not consumed by step 7."
+    },
+    {
+      "id": "en-us-yaml-multiline-plain-untouched",
+      "rule": "ellipsis",
+      "mode": "yaml",
+      "keys": [
+        "description"
+      ],
+      "in": "description: one...two\n  three...four\n",
+      "out": "description: one...two\n  three...four\n",
+      "note": "modes.md §3.8.6: a multi-line plain scalar's folding is a construct this scan does not claim, so the whole value yields no spans — including its first line."
     }
   ]
 }
