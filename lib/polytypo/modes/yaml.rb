@@ -196,7 +196,6 @@ module Polytypo
       # the run of line terminators at the end that the chomping indicator governs, which is why
       # "|", "|-", "|+", ">", ">-" and ">+" are handled identically here.
       def self.block_scalar(chars, line, run_lines, indent, v, spans)
-
         # The header: at most one chomping indicator and at most one indentation indicator, in
         # either order, then optional spaces and an optional comment. Anything else is
         # unrecognised.

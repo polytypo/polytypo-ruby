@@ -56,13 +56,6 @@ Style/MultipleComparison:
 # reference implementations' own structure) -- long methods and high complexity are inherent to
 # a single left-to-right scan with explicit lookaround, not a style problem to fix by splitting
 # arbitrarily (ARCHITECTURE.md section 4.1: no regex, a single scan, explicit index guards).
-# The public API's keyword list is fixed by the spec's options table (ARCHITECTURE.md section 7),
-# not by this method: counting `locale:`, `mode:`, `dialect:`, `keys:`, `rules:` and
-# `narrow_nbsp:` measures the contract, and the contract is the same in five runtimes. Positional
-# parameter lists are still counted, and still capped at six.
-Metrics/ParameterLists:
-  CountKeywordArgs: false
-
 Metrics/MethodLength:
   Max: 150
 Metrics/AbcSize:
@@ -75,8 +68,13 @@ Metrics/ClassLength:
   Max: 800
 Metrics/ModuleLength:
   Max: 800
+# The public API's keyword list is fixed by the spec's options table (ARCHITECTURE.md section 7),
+# not by this method: counting `locale:`, `mode:`, `dialect:`, `keys:`, `rules:` and
+# `narrow_nbsp:` measures the contract, and the contract is the same in five runtimes. Positional
+# parameter lists are still counted, and still capped at six.
 Metrics/ParameterLists:
   Max: 6
+  CountKeywordArgs: false
 Metrics/BlockNesting:
   Max: 5
 Metrics/BlockLength:
