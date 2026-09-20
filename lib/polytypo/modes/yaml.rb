@@ -123,7 +123,7 @@ module Polytypo
       private_class_method :value_run_end
 
       # One step of 3.8.4. Returns the index of the next line to scan.
-      def self.scan_line(chars, lines, li, keys, spans) # rubocop:disable Metrics/AbcSize,Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity,Metrics/MethodLength
+      def self.scan_line(chars, lines, li, keys, spans)
         line = lines[li]
         skip_line = li + 1
 
@@ -181,7 +181,7 @@ module Polytypo
         return nxt if NON_SCALAR_VALUE_CHARS.include?(value)
 
         if ["|", ">"].include?(value)
-          block_scalar(chars, lines, li, nxt, indent, v, spans)
+          block_scalar(chars, line, lines[(li + 1)...nxt], indent, v, spans)
         elsif ['"', "'"].include?(value)
           quoted_scalar(chars, line, v, spans) if nxt == li + 1
         elsif nxt == li + 1
@@ -195,8 +195,7 @@ module Polytypo
       # The header, the indentation and every line terminator lie outside every span -- including
       # the run of line terminators at the end that the chomping indicator governs, which is why
       # "|", "|-", "|+", ">", ">-" and ">+" are handled identically here.
-      def self.block_scalar(chars, lines, li, run_end, indent, v, spans) # rubocop:disable Metrics/AbcSize,Metrics/CyclomaticComplexity,Metrics/PerceivedComplexity,Metrics/MethodLength
-        line = lines[li]
+      def self.block_scalar(chars, line, run_lines, indent, v, spans)
 
         # The header: at most one chomping indicator and at most one indentation indicator, in
         # either order, then optional spaces and an optional comment. Anything else is
@@ -223,18 +222,19 @@ module Polytypo
         # spans.
         content = []
         content_indent = -1
-        ((li + 1)...run_end).each do |k|
-          nxt = lines[k]
+        run_lines.each do |nxt|
           next if blank?(chars, nxt) # blank lines belong to the block and yield no span
-          return if tab?(chars, nxt)
+
+          # A tab makes indentation undecidable; an explicit indicator that disagrees with the
+          # block as written, or a later line dedented inside it, is ambiguous rather than
+          # guessable. All three make the WHOLE block yield no spans -- bail rather than choose.
+          break content_indent = -1 if tab?(chars, nxt)
 
           next_indent = first_non_space(chars, nxt) - nxt.start
           if content_indent.negative?
             content_indent = explicit_indent.positive? ? indent + explicit_indent : next_indent
           end
-          # An explicit indicator that disagrees with the block as written, or a later line
-          # dedented inside it, is ambiguous rather than guessable -- bail rather than choose.
-          return if next_indent < content_indent
+          break content_indent = -1 if next_indent < content_indent
 
           content << nxt
         end

@@ -60,7 +60,7 @@ RSpec.describe "yaml mode (spec/rules/modes.md 3.8)" do
     end
 
     it "never matches a key carrying a declining character, at any position" do
-      expect(span_text('"description": one two' + "\n", ["description"])).to eq([])
+      expect(span_text(%("description": one two\n), ["description"])).to eq([])
       expect(span_text("a!b: one two\n", ["a!b"])).to eq([])
     end
 
@@ -104,7 +104,7 @@ RSpec.describe "yaml mode (spec/rules/modes.md 3.8)" do
       "a multi-line quoted scalar" => %(a: "hello\n  b: some prose "word" here"\n),
       "a multi-line flow mapping" => "a: {\n  b: hello world,\n  c: x\n}\n",
       "a multi-line flow sequence" => "a: [\n  one two...,\n  three\n]\n",
-      "a multi-line plain scalar" => "a: one two...\n  b: three four...\n",
+      "a multi-line plain scalar" => "a: one two...\n  b: three four...\n"
     }.each do |name, source|
       it "yields no spans anywhere inside #{name}" do
         expect(span_text(source)).to eq([])
@@ -127,7 +127,7 @@ RSpec.describe "yaml mode (spec/rules/modes.md 3.8)" do
       "a compact nested sequence" => "a: - one two...\n",
       "a compact nested mapping" => "a: one two .:\n",
       "an unterminated quoted scalar" => %(a: "one two...\n),
-      "a value that is only a comment" => "a: # one two...\n",
+      "a value that is only a comment" => "a: # one two...\n"
     }.each do |name, source|
       it "yields no spans for #{name}, and returns it byte for byte" do
         expect(span_text(source)).to eq([])
@@ -170,7 +170,7 @@ RSpec.describe "yaml mode (spec/rules/modes.md 3.8)" do
       "an explicit indicator disagreeing with the block" => "a: |4\n  one two\n",
       "a tab on a content line" => "a: |\n  one two\n  three\tfour\n",
       "a later content line dedented inside the block" => "a: |\n    deep one two\n  shallow three\n",
-      "an unrecognised header" => "a: |x\n  one two\n",
+      "an unrecognised header" => "a: |x\n  one two\n"
     }.each do |name, source|
       it "yields no spans for the whole block when there is #{name}" do
         expect(span_text(source)).to eq([])
