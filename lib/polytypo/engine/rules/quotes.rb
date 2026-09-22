@@ -141,7 +141,7 @@ module Polytypo
         # can_open always skips right and can_close always skips left (mandate 2's inner-side
         # skip); the outer side skips only when nbsp can reach it (the locale-derived
         # space_right/space_left sets), which is what keeps every verdict inert to nbsp (Lemma B).
-        def self.collect_candidates(cp, skip_sets, idioms)
+        def self.collect_candidates(cp, skip_sets, idioms, clitics)
           n = cp.length
           candidates = []
 
@@ -149,9 +149,12 @@ module Polytypo
           # and the general ambiguous-medial-span shape (quotes.md 3.2a) -- quotes must decline
           # pairing for both, so apostrophe's own case ladder never independently "fixes" a shape
           # quotes left alone.
+          # spec 1.4.0 adds a third member to the same union: the span-boundary elision veto,
+          # which fires only where one literal neighbour is the inline MARKER (quotes.md 3.2).
           idiom_matched = QuoteAmbiguity.compute_idiom_matched_indices(cp, idioms)
           ambiguous_shape = QuoteAmbiguity.compute_ambiguous_shape_indices(cp)
-          elision_vetoed = idiom_matched.merge(ambiguous_shape)
+          span_boundary = QuoteAmbiguity.compute_span_boundary_veto_indices(cp, clitics)
+          elision_vetoed = idiom_matched.merge(ambiguous_shape).merge(span_boundary)
 
           (0...n).each do |i|
             g = cp[i]
@@ -326,7 +329,7 @@ module Polytypo
         # simultaneous per round, and when the intersection fails to shrink A, the pair with the
         # greatest open index is forced out -- both clauses are normative, so two ports cannot
         # disagree.
-        def self.certify(cp, initial_pairs, quotes_data, skip_sets, idioms)
+        def self.certify(cp, initial_pairs, quotes_data, skip_sets, idioms, clitics)
           accepted = initial_pairs.dup
           # Each round accepts or strictly shrinks `accepted`; it is finite and the empty set
           # accepts unconditionally, so the loop runs at most |A0| + 1 times (quotes.md 3.5). The
@@ -338,7 +341,7 @@ module Polytypo
 
             plan = compute_render_plan(cp, accepted, quotes_data)
             y, m = apply_render_plan(cp, plan)
-            rederived = pair_candidates(y, collect_candidates(y, skip_sets, idioms))
+            rederived = pair_candidates(y, collect_candidates(y, skip_sets, idioms, clitics))
 
             b_set = Set.new(rederived)
             projected = accepted.map { |p| Pair.new(m[p.open], m[p.close]) }
@@ -396,15 +399,16 @@ module Polytypo
         def self.scan(cp, locale_data, _ctx)
           quotes_data = locale_data["quotes"]
           idioms = quotes_data["elisionIdioms"] || []
+          clitics = quotes_data["elisionClitics"] || {}
           skip_sets = compute_skip_sets(quotes_data)
 
-          candidates = collect_candidates(cp, skip_sets, idioms)
+          candidates = collect_candidates(cp, skip_sets, idioms, clitics)
           return [] if candidates.empty?
 
           initial_pairs = pair_candidates(cp, candidates)
           return [] if initial_pairs.empty?
 
-          accepted = certify(cp, initial_pairs, quotes_data, skip_sets, idioms)
+          accepted = certify(cp, initial_pairs, quotes_data, skip_sets, idioms, clitics)
           return [] if accepted.empty?
 
           emit(cp, accepted, quotes_data)

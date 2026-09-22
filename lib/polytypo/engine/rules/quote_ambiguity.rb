@@ -144,6 +144,74 @@ module Polytypo
         #
         # idioms is the locale's quotes.elisionIdioms array: a list of Hashes with String keys
         # "left"/"elided"/"right", each a literal String (locale.schema.json).
+        # Span-boundary elision veto (quotes.md 3.2, spec 1.4.0, canonical issue #53 1).
+        #
+        # Fires only where one literal neighbour of a NARROW mark IS modes.md 3.2's inline
+        # MARKER -- the marker stands exactly where the attaching word would be, which is why
+        # the medial-elision veto cannot see the shape and why a possessive or elision written
+        # flush against a span was classified as a quotation candidate and inverted the
+        # enclosing pair.
+        #
+        # The attaching side is read as a MAXIMAL LETTER run bounded by a non-ALNUM code point
+        # and compared whole: a prefix test would match the entry "s" inside "sure" and eat
+        # <em>'sure'</em>, a genuine quotation. The comparison folds the RUN's first code point,
+        # ASCII A-Z only, and is exact thereafter -- never a locale-dependent case mapping
+        # (ARCHITECTURE.md 4.4), so String#downcase must not appear here.
+        #
+        # Keyed off the marker and never off the mode: a mode conditional is forbidden
+        # (modes.md 7.4), which is also why text mode needs no separate path.
+        def self.compute_span_boundary_veto_indices(cp, clitics)
+          before = clitics["before"] || []
+          after = clitics["after"] || []
+          return {} if before.empty? && after.empty?
+
+          before_cps = before.map { |entry| entry.codepoints }
+          after_cps = after.map { |entry| entry.codepoints }
+          vetoed = {}
+
+          (0...cp.length).each do |i|
+            next unless narrow?(cp[i])
+
+            if !after_cps.empty? && at(cp, i - 1) == Engine::MARKER &&
+               run_matches?(cp, i, 1, after_cps)
+              vetoed[i] = true
+              next
+            end
+            if !before_cps.empty? && at(cp, i + 1) == Engine::MARKER &&
+               run_matches?(cp, i, -1, before_cps)
+              vetoed[i] = true
+            end
+          end
+          vetoed
+        end
+
+        # The maximal LETTER run adjacent to the mark at `i`, growing in `dir`, compared against
+        # `entries`. Declines an empty run, and one an ALNUM code point continues past -- that
+        # bound is what makes the run the WHOLE fragment rather than a prefix of one.
+        def self.run_matches?(cp, i, dir, entries)
+          j = i + dir
+          j += dir while j >= 0 && j < cp.length && UnicodeUtil.letter?(cp[j])
+          return false if j == i + dir
+
+          outer = at(cp, j)
+          return false if outer != Engine::NONE && alnum?(outer)
+
+          start = dir == -1 ? j + 1 : i + 1
+          length = dir == -1 ? i - 1 - start + 1 : j - 1 - start + 1
+
+          entries.any? do |entry|
+            next false unless entry.length == length
+
+            same = ascii_lower(cp[start]) == entry[0]
+            (1...entry.length).each do |k|
+              break unless same
+
+              same = cp[start + k] == entry[k]
+            end
+            same
+          end
+        end
+
         def self.compute_idiom_matched_indices(cp, idioms)
           vetoed = {}
           return vetoed if idioms.nil? || idioms.empty?
