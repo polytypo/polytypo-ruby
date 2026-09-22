@@ -165,8 +165,8 @@ module Polytypo
           after = clitics["after"] || []
           return {} if before.empty? && after.empty?
 
-          before_cps = before.map { |entry| entry.codepoints }
-          after_cps = after.map { |entry| entry.codepoints }
+          before_cps = before.map(&:codepoints)
+          after_cps = after.map(&:codepoints)
           vetoed = {}
 
           (0...cp.length).each do |i|
