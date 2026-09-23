@@ -78,7 +78,11 @@ RSpec.describe "idempotency" do
   end
 
   it "is idempotent over a bounded exhaustive sweep, every locale" do
-    alphabet = ['"', "'", "-", " ", ".", "1", "a", "«", "–", "”"]
+    # `)` is here for apostrophe.md 3.3's case 2a (spec 1.5.0), under pipeline-idempotency.md 6's
+    # standing obligation to widen the alphabet in the same change that fixes a defect its bound
+    # cannot reach. It is the one CLOSEDELIM member the alphabet did not already hold: `”` was in
+    # it as an emitted quote glyph and covers the quotation half of the class.
+    alphabet = ['"', "'", "-", " ", ".", "1", "a", "«", "–", "”", ")"]
     broken = []
     locales.each do |locale|
       bounded_strings(alphabet, 4) do |text|

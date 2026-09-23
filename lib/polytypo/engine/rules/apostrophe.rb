@@ -9,7 +9,7 @@ require_relative "../registry"
 module Polytypo
   module Engine
     module Rules
-      # spec/rules/apostrophe.md (spec 1.2.0), order 50.
+      # spec/rules/apostrophe.md (spec 1.5.0), order 50.
       #
       # Converts a straight U+0027 to U+2019 where it is genuinely an apostrophe: a contraction,
       # an elision, a possessive, or a decade elision. Runs immediately after `quotes` (order 40)
@@ -51,6 +51,14 @@ module Polytypo
         # without its brackets, its dashes and Engine::MARKER. Read only by case 3a.
         OPENQUOTE = [0xAB, 0x2018, 0x201A, 0x201B, 0x201C, 0x201E, 0x201F, 0x2039].freeze
 
+        # CLOSEDELIM is apostrophe.md 3.1 CLOSEDELIM (spec 1.5.0): the bracket and quotation
+        # members of CLOSEISH, without its sentence punctuation and without the dashes OPENISH
+        # already carries. These are exactly the closing delimiters case 3 has always accepted on
+        # the mark's RIGHT; before 1.5.0 no left-hand test accepted any of them. Engine::MARKER is
+        # not a member (modes.md 3.3): it is in OPENISH, so a mark against a span boundary already
+        # reaches case 4 and emits the same U+2019. Read only by case 2a.
+        CLOSEDELIM = [0x29, 0x5D, 0x7D, 0xBB, 0x2019, 0x201D, 0x203A].freeze
+
         BREAK = [0x0A, 0x0D, 0x0B, 0x0C, 0x85, 0x2028, 0x2029, Engine::LINE_MARKER].freeze
 
         # SPACELIKE, including Engine::LINE_MARKER as a member of BREAK for every rule everywhere
@@ -77,6 +85,11 @@ module Polytypo
 
           # Case 2 -- medial apostrophe: `don't`, `l'été`, `O'Brien`, `1990's`.
           return true if alnum?(left) && alnum?(right)
+
+          # Case 2a (spec 1.5.0) -- suffix or possessive after a closing delimiter:
+          # `(order 90)'s`, `“Hamlet”'s`, `{user}'s`. Disjoint from every other case, so its
+          # position in the ladder carries no behaviour.
+          return true if CLOSEDELIM.include?(left) && alnum?(right)
 
           # Case 3 -- trailing elision or possessive: `the dogs' bowls`, `Jesus'`, `rock 'n'` (the
           # trailing mark).
