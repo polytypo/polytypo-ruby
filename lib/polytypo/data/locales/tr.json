@@ -1,0 +1,72 @@
+{
+  "locale": "tr",
+  "name": "Turkish",
+  "quotes": {
+    "primary": {
+      "open": "“",
+      "close": "”",
+      "innerSpace": "none"
+    },
+    "secondary": {
+      "open": "‘",
+      "close": "’",
+      "innerSpace": "none"
+    },
+    "elisionIdioms": [],
+    "elisionClitics": {
+      "before": [],
+      "after": [
+        "nin",
+        "nın",
+        "de",
+        "da",
+        "te",
+        "ye",
+        "yle",
+        "nı",
+        "dan",
+        "den",
+        "lik",
+        "nci",
+        "üm"
+      ]
+    }
+  },
+  "dash": {
+    "parenthetical": "none",
+    "range": "none"
+  },
+  "ellipsis": {
+    "abbreviatedAfterTerminal": true
+  },
+  "hyphen": {
+    "prefixes": [],
+    "suffixes": [],
+    "compounds": []
+  },
+  "nbsp": {
+    "beforePunctuation": [],
+    "narrowBeforePunctuation": [],
+    "afterShortWords": [],
+    "abbreviations": [
+      "Kur. Bşk.",
+      "Nö. Sb."
+    ],
+    "beforeUnits": [
+      "mm",
+      "cm",
+      "km",
+      "kg",
+      "mg",
+      "hl",
+      "m²",
+      "cm²",
+      "°C",
+      "ton"
+    ],
+    "beforeNumber": [],
+    "beforeWord": [],
+    "afterSymbols": [],
+    "initialBinding": "none"
+  }
+}
