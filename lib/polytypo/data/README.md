@@ -1,10 +1,12 @@
 # Vendored spec subset
 
-This directory is a manually-synced copy of the subset of `polytypo/polytypo`'s canonical `spec/`
-that this gem needs at runtime: `locales/`, `fixtures/`, `rules/order.json`, `rules/dashes.md`,
-`schema/`, `VERSION`, `UNICODE`. It is **not** the canonical spec — the rest of the normative
-prose (`spec/rules/*.md` beyond `dashes.md`) and `validate-spec.mjs` live only in
-`polytypo/polytypo`.
+This directory is a manually-synced copy of a subset of `polytypo/polytypo`'s canonical `spec/`:
+`locales/`, `fixtures/`, the whole of `rules/`, `schema/`, `VERSION` and `UNICODE`. The gem and its
+specs read only part of that — the locale and fixture data, `rules/order.json` and
+`rules/dashes.md`; the other twelve rule documents are carried as the normative prose for the
+behaviour the data drives, next to the data. It is **not** the canonical spec: `validate-spec.mjs`
+lives only in `polytypo/polytypo`, and so does the authority — a change starts there and arrives
+here by re-copying, never the other way round.
 
 Named `lib/polytypo/data/`, not `vendor/polytypo-spec/` like the JS/Python ports: a Ruby
 gemspec's `files` list can include any path directly, so there is no need for a separate
