@@ -8,13 +8,16 @@
 #
 # What is compared, for every regular file under the vendored directory:
 #
-#   locales/*.json  in full, byte for byte, when the vendored file has a `sources` array — which
-#                   is how the repositories that keep the citations vendor them. When it does not,
-#                   the file is the shipped form: three runtimes embed these exact files in the
+#   locales/*.json  (except registry.json, which carries no citations and is compared byte for
+#                   byte like anything else) in full, byte for byte, when the vendored files have a
+#                   `sources` array — which
+#                   is how the repositories that keep the citations vendor them. When they do not,
+#                   they are the shipped form: three runtimes embed these exact files in the
 #                   published package and drop `sources` when vendoring, so the comparison is
-#                   against canonical with that one array removed. Every other field must match
-#                   either way, and which side of this the repository is on is read off the file
-#                   rather than configured.
+#                   against canonical with that one array removed. Which side this repository is on
+#                   is read off the files rather than configured, and the whole directory must
+#                   agree — a tree where some locale files kept their citations and others lost
+#                   them fails, because that is a tree losing citations file by file.
 #   everything else byte-identical to spec/<same path> in canonical.
 #
 # Paths listed in <dir>/.not-canonical are skipped — the files this repository authors itself. A
@@ -79,6 +82,25 @@ done < "$tmp/skip"
 
 find "$vendor" -type f -print | sed "s|^$vendor/||" | LC_ALL=C sort > "$tmp/vendored"
 
+with_sources=0
+without_sources=0
+for locale in "$vendor"/locales/*.json; do
+  [ -f "$locale" ] || continue
+  # registry.json lists the locales and their aliases; it attests nothing and has no citations.
+  [ "$(basename "$locale")" = 'registry.json' ] && continue
+  if jq -e 'has("sources")' "$locale" >/dev/null 2>&1; then
+    with_sources=$((with_sources + 1))
+  else
+    without_sources=$((without_sources + 1))
+  fi
+done
+if [ "$with_sources" -ne 0 ] && [ "$without_sources" -ne 0 ]; then
+  echo "$vendor/locales/ is inconsistent: $with_sources file(s) carry a \"sources\" array and" >&2
+  echo "$without_sources do not. A vendored tree either keeps the citations or ships without them;" >&2
+  echo "a mixture means some files lost theirs, which is drift this check would otherwise allow." >&2
+  exit 1
+fi
+
 : > "$tmp/report"
 checked=0
 while IFS= read -r rel; do
@@ -90,6 +112,10 @@ while IFS= read -r rel; do
     continue
   fi
   case $rel in
+    locales/registry.json)
+      cmp -s "$vendor/$rel" "$canon" ||
+        printf 'differs from canonical       %s\n' "$rel" >> "$tmp/report"
+      ;;
     locales/*.json)
       if jq -e 'has("sources")' "$vendor/$rel" >/dev/null 2>&1; then
         cmp -s "$vendor/$rel" "$canon" ||
