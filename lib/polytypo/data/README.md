@@ -20,12 +20,15 @@ canonical's `spec/` changes, re-copy the affected files here.
 
 CI checks that it was done. `script/check-vendored-spec.sh` compares every file in this
 directory against canonical `polytypo/polytypo` at tag `spec-v` + this directory's own
-`VERSION`, and fails on any difference. Three details: the files this repository authors
-itself are listed in `.not-canonical` and skipped; `locales/*.json` are compared with the
-`sources` array dropped from both sides, which is the one field a vendored copy may
-legitimately differ in; and a file here with no canonical counterpart is a failure, so a
-canonical rename cannot pass unnoticed. Completeness is deliberately not checked — each
-runtime vendors its own subset, and the subsets differ.
+`VERSION`, and fails on any difference. Three details. The files this repository authors
+itself are listed in `.not-canonical` and skipped — and a listed path that canonical *does*
+have is an error, so that list cannot be used to keep a forked copy of a canonical file. A
+`locales/*.json` file is compared in full when it carries its `sources` array, and against
+canonical minus that array when it does not, which is the shipped form three of the five
+runtimes vendor; the script reads which case it is off the file rather than being told. And a
+file here with no canonical counterpart is a failure, so a canonical rename cannot pass
+unnoticed. Completeness is deliberately not checked — each runtime vendors its own subset,
+and the subsets differ.
 
 Before that check existed, this half of the tree went stale unnoticed in four of the five
 ports at once: the data half is proved by the test suite, and nothing at all read the prose.

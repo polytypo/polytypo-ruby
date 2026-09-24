@@ -33,6 +33,13 @@ jobs:
       - name: Verify canonical spec tag exists in polytypo/polytypo
         run: ruby script/verify_spec_tag.rb
 
+      # The step above proves the tag exists; this one proves the vendored tree equals it.
+      # CI on main runs the same check, but a tag can be pushed to a commit CI never saw,
+      # and this is the last point before a package is built from that tree
+      # (polytypo/polytypo#56).
+      - name: Verify the vendored spec matches that tag
+        run: sh script/check-vendored-spec.sh lib/polytypo/data
+
       - name: Lint (RuboCop)
         run: bundle exec rubocop
 

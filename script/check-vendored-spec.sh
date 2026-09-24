@@ -4,20 +4,24 @@
 #
 # Nothing else checks the prose half of that tree. The data half stays current because the test
 # suite fails without it; a stale rules/*.md is invisible, and four published packages once
-# shipped rule documentation contradicting their own engine (polytypo/polytypo#56).
+# shipped rule documentation that contradicted their own engine (polytypo/polytypo#56).
 #
 # What is compared, for every regular file under the vendored directory:
 #
-#   locales/*.json  parsed and compared with the `sources` array dropped from both sides. Three
-#                   runtimes embed these exact files in the published package and drop the
-#                   citations when vendoring, which is documented and deliberate; every other
-#                   field must still match canonical.
+#   locales/*.json  in full, byte for byte, when the vendored file has a `sources` array — which
+#                   is how the repositories that keep the citations vendor them. When it does not,
+#                   the file is the shipped form: three runtimes embed these exact files in the
+#                   published package and drop `sources` when vendoring, so the comparison is
+#                   against canonical with that one array removed. Every other field must match
+#                   either way, and which side of this the repository is on is read off the file
+#                   rather than configured.
 #   everything else byte-identical to spec/<same path> in canonical.
 #
-# Paths listed in <dir>/.not-canonical are skipped — the files this repository authors itself.
-# A vendored file with no canonical counterpart fails, so a renamed or deleted canonical file
-# cannot pass unnoticed. Completeness is deliberately not checked: each runtime vendors only the
-# subset it needs, and the subsets differ.
+# Paths listed in <dir>/.not-canonical are skipped — the files this repository authors itself. A
+# listed path that DOES exist in canonical is an error, not an exemption: the list cannot be used
+# to fork a canonical file. A vendored file with no canonical counterpart fails, so a renamed or
+# deleted canonical file cannot pass unnoticed. Completeness is deliberately not checked: each
+# runtime vendors only the subset it needs, and the subsets differ.
 set -eu
 
 usage='usage: check-vendored-spec.sh <vendored-spec-dir>'
@@ -61,6 +65,18 @@ if [ -f "$vendor/.not-canonical" ]; then
   sed -e 's/#.*$//' -e 's/[[:space:]]*//g' "$vendor/.not-canonical" | grep -v '^$' >> "$tmp/skip" || true
 fi
 
+forked=''
+while IFS= read -r skip; do
+  [ "$skip" = '.not-canonical' ] && continue
+  [ -e "$tmp/canonical/spec/$skip" ] && forked="$forked $skip"
+done < "$tmp/skip"
+[ -z "$forked" ] || {
+  echo "$vendor/.not-canonical lists path(s) canonical does have:$forked" >&2
+  echo "That list is for files this repository authors, not a way to keep a forked copy of a" >&2
+  echo "canonical file. Remove the entry and re-copy the file, or rename this repository's own." >&2
+  exit 1
+}
+
 find "$vendor" -type f -print | sed "s|^$vendor/||" | LC_ALL=C sort > "$tmp/vendored"
 
 : > "$tmp/report"
@@ -75,10 +91,15 @@ while IFS= read -r rel; do
   fi
   case $rel in
     locales/*.json)
-      jq -S 'del(.sources)' "$vendor/$rel" > "$tmp/a" || { echo "$rel is not valid JSON" >&2; exit 1; }
-      jq -S 'del(.sources)' "$canon" > "$tmp/b" || { echo "canonical $rel is not valid JSON" >&2; exit 1; }
-      cmp -s "$tmp/a" "$tmp/b" ||
-        printf 'differs from canonical       %s (ignoring "sources")\n' "$rel" >> "$tmp/report"
+      if jq -e 'has("sources")' "$vendor/$rel" >/dev/null 2>&1; then
+        cmp -s "$vendor/$rel" "$canon" ||
+          printf 'differs from canonical       %s\n' "$rel" >> "$tmp/report"
+      else
+        jq -S . "$vendor/$rel" > "$tmp/a" || { echo "$rel is not valid JSON" >&2; exit 1; }
+        jq -S 'del(.sources)' "$canon" > "$tmp/b" || { echo "canonical $rel is not valid JSON" >&2; exit 1; }
+        cmp -s "$tmp/a" "$tmp/b" ||
+          printf 'differs from canonical       %s (shipped form, without "sources")\n' "$rel" >> "$tmp/report"
+      fi
       ;;
     *)
       cmp -s "$vendor/$rel" "$canon" ||
