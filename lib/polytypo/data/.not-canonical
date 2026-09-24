@@ -1,0 +1,4 @@
+# Paths under this directory that this repository authors itself, so
+# check-vendored-spec.sh must not look for them in canonical polytypo's spec/.
+# Everything else here is compared against canonical at tag spec-v$(cat VERSION).
+README.md

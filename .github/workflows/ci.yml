@@ -35,3 +35,18 @@ jobs:
       # cannot catch a packaging defect like a gemspec `files` list missing a data file.
       - name: Packaging smoke test
         run: bundle exec rspec spec/packaging_spec.rb
+
+  vendored-spec:
+    name: Vendored spec matches canonical
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+
+      # The vendored spec subset in this repository is a manually synced copy of canonical
+      # polytypo's spec/. Its data half stays current because the test suite fails without it;
+      # nothing checked its rules/*.md half, and four published packages shipped rule
+      # documentation that contradicted their own engine (polytypo/polytypo#56). This compares
+      # every vendored file against canonical at the tag the vendored VERSION names, so a stale
+      # copy — or a released spec amended in place — fails here rather than reaching a package.
+      - name: Compare against canonical spec tag
+        run: sh script/check-vendored-spec.sh lib/polytypo/data
