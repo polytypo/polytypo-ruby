@@ -107,7 +107,7 @@ RSpec.describe "idempotency" do
     templates = {
       "plain scalar and body" => ->(a, b) { "---\nk: #{a}\n---\n\n#{b}\n" },
       "two scalars" => ->(a, b) { "---\nk: #{a}\nj: #{b}\n---\n\nbody\n" },
-      "block scalar and body" => ->(a, b) { "---\nk: |\n  #{a}\n---\n\nbody #{b} end\n" },
+      "block scalar and body" => ->(a, b) { "---\nk: |\n  #{a}\n---\n\nbody #{b} end\n" }
     }
     payloads = []
     bounded_strings(alphabet, 2) { |text| payloads << text }
