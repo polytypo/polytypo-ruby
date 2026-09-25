@@ -85,6 +85,31 @@ chomping indicator are never decoded and rewritten — the file is located, not 
 trailing newlines of a `|+` block come back exactly as you wrote them. An empty `keys:` array is
 legal and processes nothing, and `yaml` mode needs no parser at all.
 
+In `markdown` mode frontmatter is skipped whole by default, delimiters included — it is a
+machine-read block, and `fr` would put a narrow no-break space in front of the colon of every
+field in it. On a site whose frontmatter carries the headline that leaves the most visible string
+on the page untouched, so name the keys you want processed:
+
+```ruby
+Polytypo.transform(
+  %(---\ntitle: He said "hello" once\nslug: "he-said-hello"\n---\n\nThe body was typeset all along.\n),
+  locale: "en-US", mode: "markdown", dialect: "commonmark", frontmatter_keys: ["title"]
+)
+# ---
+# title: He said “hello” once
+# slug: "he-said-hello"
+# ---
+#
+# The body was typeset all along.
+```
+
+Without `frontmatter_keys:` nothing in the block changes, and a key you do not name never does. The
+block is read with the same scan `yaml` mode uses, so it refuses the same constructs — a
+single-quoted scalar containing `''` among them, which is how an apostrophe is written inside single
+quotes, so `title: 'It''s a test'` comes back untouched. The block is also processed separately from
+the body, which shows up in exactly one place: an unbalanced quotation mark in `title` cannot pair
+with a mark in your first paragraph.
+
 `require "polytypo"` never loads the native `commonmarker` extension unless you actually call
 `Polytypo.transform` with `mode: "markdown"` — the require happens lazily, inside the markdown
 pipeline only. A single `Polytypo.transform` module method (not separate

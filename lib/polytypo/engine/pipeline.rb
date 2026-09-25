@@ -59,6 +59,35 @@ module Polytypo
       value.to_set
     end
 
+    # modes.md 3.7.4: "markdown" mode's `frontmatter_keys` option (spec 1.7.0).
+    #
+    # Optional, unlike `keys` -- nil means the frontmatter block is skipped whole, which is every
+    # pre-1.7.0 document's behaviour -- and an empty Array is legal, exactly as it is for `keys`.
+    # Checked after dialect and before the parse, which is what decides that a document failing to
+    # parse in its dialect still reports the option error rather than CODE_MALFORMED_INPUT.
+    def self.resolve_frontmatter_keys(value)
+      return nil if value.nil?
+
+      unless value.is_a?(Array)
+        raise Polytypo::Error.new(
+          Polytypo::CODE_INVALID_OPTION,
+          '"frontmatter_keys" must be an Array of Strings when given (modes.md 3.7.4). ' \
+          "Received #{value.inspect}.",
+        )
+      end
+
+      value.each do |key|
+        next if key.is_a?(String)
+
+        raise Polytypo::Error.new(
+          Polytypo::CODE_INVALID_OPTION,
+          "\"frontmatter_keys\" must contain only Strings; received #{key.inspect}.",
+        )
+      end
+
+      value.to_set
+    end
+
     # Resolves the locale, builds the rule plan, and runs each enabled rule in
     # spec/rules/order.json order over a code-point array, applying its edits before the next
     # rule sees it. No module-level mutable state beyond the immutable, load-once-on-first-use

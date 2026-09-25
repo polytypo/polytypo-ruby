@@ -21,9 +21,7 @@
     ],
     "elisionClitics": {
       "before": [],
-      "after": [
-        "s"
-      ]
+      "after": ["s"]
     }
   },
   "dash": {
@@ -75,5 +73,71 @@
     "beforeWord": [],
     "afterSymbols": [],
     "initialBinding": "chain"
-  }
+  },
+  "sources": [
+    {
+      "rule": "quotes",
+      "cite": "The Chicago Manual of Style, 18th ed., 6.11 (quotations within quotations); CMOS Q&A, topic “Quotations”",
+      "url": "https://www.chicagomanualofstyle.org/qanda/data/faq/topics/Quotations/faq0025.html",
+      "note": "US practice: double quotation marks at the first level, single at the second. CMOS 6.11: “When single quotation marks are nested within double quotation marks, and two of the marks appear next to each other, a space between the two marks, though not strictly required, aids legibility.” That optional legibility space is a typesetting refinement and is not expressed in this file."
+    },
+    {
+      "rule": "quotes",
+      "cite": "Chicago Manual of Style Online Q&A, topic “Special Characters”: “If you want, for example, an apostrophe rather than an opening single quotation mark at the beginning of a string (e.g., the apostrophe before the n in “rock ’n’ roll”), you must tell the computer that that's what you want.”",
+      "url": "https://www.chicagomanualofstyle.org/qanda/data/faq/topics/SpecialCharacters/faq0002.html",
+      "note": "Supports quotes.elisionIdioms = [{ left: \"rock\", elided: \"n\", right: \"roll\" }]: the leading mark of the elision must not be resolved as an opening quotation mark. CMOS states the mark's function, not a code point; U+2019 follows from spec/rules/apostrophe.md, which is unchanged. Reproduced verbatim, including CMOS's own U+2019 in “rock ’n’ roll” — not straightened to U+0027 — because it is a direct quotation of the source's printed text. Edition/section not fully cited: the page reports 17th ed. in-body while the site titles itself 18th ed., and the numbered CMOS section is paywalled."
+    },
+    {
+      "rule": "quotes",
+      "cite": "American Heritage Dictionary of the English Language, entry “rock and roll”: headword line “rock-and-roll or rock 'n' roll”, the elided variant spaced as rock 'n' roll with a mark on each side of the bare word n.",
+      "url": "https://www.ahdictionary.com/word/search.html?q=rock+and+roll",
+      "note": "Attests the spaced two-mark orthography of the \"rock\"/\"n\"/\"roll\" idiom only — this citation supports no other elisionIdioms entry. In particular it does not attest \"fish 'n' chips\", which is not listed here and would need its own citation before being added; the field is a closed set of individually evidenced idioms, not a general elision-word list."
+    },
+    {
+      "rule": "dashes",
+      "cite": "The Chicago Manual of Style — CMOS Shop Talk, “Hyphens and Dashes: A Refresher”, 23 January 2024",
+      "url": "https://cmosshoptalk.com/2024/01/23/hyphens-and-dashes-a-refresher/",
+      "note": "Verbatim: “In Chicago style, such dashes consist of em dashes—like this—with no space before or after.” And: “When consecutive digits express a range, however, they are separated in Chicago style not by hyphens but by en dashes, as in the range 3–5.”"
+    },
+    {
+      "rule": "ellipsis",
+      "cite": "The Chicago Manual of Style, 18th ed., ellipses (three dots)",
+      "url": "https://cmosshoptalk.com/2021/06/15/navigating-spaces-in-manuscripts-and-beyond/",
+      "note": "`abbreviatedAfterTerminal` is false: the two-dot form after `!`/`?` is a Russian convention with no counterpart in English usage. Chicago’s spaced ellipsis (. . .) is a print-typesetting variant, not a separate character sequence this spec models."
+    },
+    {
+      "rule": "nbsp",
+      "cite": "The Chicago Manual of Style — CMOS Shop Talk, “Navigating Spaces in Manuscripts and Beyond”, 15 June 2021",
+      "url": "https://cmosshoptalk.com/2021/06/15/navigating-spaces-in-manuscripts-and-beyond/",
+      "note": "Chicago recommends a nonbreaking space “between two or more initials in a name like ‘E. B. White’” (hence initialBinding: \"chain\" — spec 0.6.0: the field used to be the boolean bindInitials; Chicago's own “two or more” wording is the citation for the chain requirement, not merely for turning N7 on) and “between a numeral and an abbreviated unit of measure, as in ‘10 kg’” (hence beforeUnits)."
+    },
+    {
+      "rule": "nbsp",
+      "cite": "BIPM, The International System of Units (SI), 9th ed. (2019), concise summary, “The language of science: using the SI to express the values of quantities”",
+      "url": "https://www.bipm.org/documents/20126/41483022/SI-Brochure-9-concise-EN.pdf",
+      "note": "Verbatim: “A single space is always left between the number and the unit.” This is the authority for the unit list itself; Chicago is the authority for making that space non-breaking. `%` is included even though Chicago sets percentages closed up (45%): the rule only converts a space the author already typed, and a spaced `45 %` in English is a deliberate scientific-style choice worth binding."
+    },
+    {
+      "rule": "nbsp",
+      "cite": "No normative source found for English short-word binding; list deliberately empty",
+      "note": "`afterShortWords`, `beforePunctuation` and `narrowBeforePunctuation` are empty by design. English typography has no equivalent of the Russian rule against leaving short prepositions at line end, and no English authority prescribes a space before terminal punctuation. `afterSymbols` is empty because no consulted source states that `§`/`№` bind to a following number in English."
+    },
+    {
+      "rule": "hyphen",
+      "cite": "No English authority prescribes non-breaking hyphens for particular word forms; lists deliberately empty",
+      "note": "`prefixes`, `suffixes` and `compounds` are empty. This field exists for languages with a closed, normative set of hyphenated morphological forms (Russian кое-, -таки, из-под). English hyphenation is productive and open-ended — self-, ex-, -like, well-known and thousands more — so any list would be an invented sample, not a specification. Chicago’s hyphenation guidance (its hyphenation table) governs whether to hyphenate, not whether the resulting hyphen may break, and Chicago explicitly permits breaking at a hyphen."
+    },
+    {
+      "rule": "nbsp",
+      "cite": "The Chicago Manual of Style Online, Q&A, topic “Word Division”: “we don’t include any recommendation that says you must carry an abbreviation that ends in a period over to the next line when the sentence continues beyond the abbreviation. So a line is allowed to end with an ‘a.m.’ or ‘Jr.’ or the like that occurs in the middle of a sentence.”",
+      "url": "https://www.chicagomanualofstyle.org/qanda/data/faq/topics/WordDivision/faq0007.html",
+      "note": "`beforeNumber` and `beforeWord` are empty, and Chicago does not merely omit reference abbreviations from its nonbreaking-space guidance — it states positively that no such rule exists, so `No. 5`, `p. 12` and `pp. 12–14` are refused on the source’s own words rather than on an argument from silence (issue #30). The same answer attributes the practice to typesetters rather than to Chicago: “some typesetters will use a nonbreaking space to prevent a compound like ‘St. Louis’ or ‘Dr. Smith’ from breaking at the end of a line” — which is why `beforeWord` stays empty too; the named exception is initials in a name, carried by `initialBinding`. CMOS Shop Talk, “Navigating Spaces in Manuscripts and Beyond” (15 June 2021), cited above for `initialBinding` and `beforeUnits`, introduces its four contexts with “can be helpful in the following contexts, among others”, so it must not be described as an exhaustive list."
+    },
+    {
+      "rule": "quotes",
+      "cite": "The Chicago Manual of Style, 7.16 “Possessive form of most nouns” (section number and title confirmed against the publisher's own chapter-7 table of contents; cited as 7.16–19 and 7.22 by the CMOS Q&A on the 18th-edition site). Verbatim, as reproduced by CMOS Shop Talk, “Section 7.16 in the Spotlight”, 12 May 2015: “The possessive of most singular nouns is formed by adding an apostrophe and an s.” Reconfirmed for the current edition by CMOS Shop Talk, 31 August 2021: “Chicago adds an apostrophe and an s to form the possessive of a singular noun, including singular nouns ending in s” (see CMOS 7.16)",
+      "url": "https://cmosshoptalk.com/2021/08/31/introducing-the-chicago-manual-of-style-for-perfectit/",
+      "note": "Supports the single entry quotes.elisionClitics.after = [\"s\"] — the possessive s, not the contraction enclitics. t, ll, re, ve, d and m are deliberately absent: nobody writes `won`'t, so they have no attested occurrence in the shape this veto is scoped to, whereas possessivising a set-off identifier (`x`'s printer) is everyday technical prose and is the shape reported in canonical issue #53. Chicago states the rule, not a code point; U+2019 follows from apostrophe.md §3.3, which is unchanged. Edition and section provenance is mixed deliberately and should not be tidied into a single number: the numbered paragraph itself is paywalled, the verbatim wording above is the 16th edition's (the 2015 post carries an editor's note saying so), and the 2021 post plus the 18th-edition Q&A are what establish that 7.16 is still the general rule. CMOS 7.22's alternative practice (Burns' rather than Burns's) does not affect this entry: the veto matches the maximal LETTER run to the RIGHT of the mark, so Burns's fires on s while Burns' has no letter there and fires nothing. CMOS 7.29 “Possessive with italicized or quoted terms” is a closer fit to the reported shape than 7.16 and would strengthen this citation, but its text is paywalled and was not read — only its title, from the table of contents."
+    }
+  ]
 }

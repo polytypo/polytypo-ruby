@@ -2,6 +2,7 @@
 
 require_relative "spans"
 require_relative "html"
+require_relative "yaml"
 require_relative "parse_error"
 require_relative "../errors"
 
@@ -65,6 +66,56 @@ module Polytypo
         nil
       end
       private_class_method :detect_frontmatter_delimiter
+
+      # modes.md 3.7.4, spec 1.7.0. The frontmatter block's own spans, which form a SECOND TEXT
+      # UNIT: the pipeline runs over them separately from the body's, so an unbalanced mark in a
+      # metadata field can never pair with one in the first paragraph, and the option cannot
+      # change a byte outside the block.
+      #
+      # Spans come from the scan of modes.md 3.8 -- frontmatter IS YAML, and implementing that
+      # grammar twice is how two implementations of one spec drift -- with +keys+ as step 8's key
+      # predicate. The block is the construct markdown_spans skips (3.7.3, the :frontmatter node),
+      # so the option only ever adds spans where the skip removed them: no source position belongs
+      # to both units. A TOML block yields nothing, with the option or without it -- its quoting is
+      # a second grammar this scan does not claim (modes.md 7.13).
+      #
+      # The content range comes from the node rather than from a second scan of the text: comrak
+      # reports the block from its opening delimiter line through its closing one, so the content
+      # is every line between them, and both delimiters and every line terminator stay outside
+      # every span.
+      def self.frontmatter_spans(source, keys)
+        require "commonmarker"
+        return [] if keys.empty?
+        return [] unless detect_frontmatter_delimiter(source) == "---"
+
+        cp = Polytypo::Engine::Codepoints.to_codepoints(source)
+        chars = cp.map { |c| [c].pack("U") }
+        line_starts = build_line_starts(chars)
+
+        spans = []
+        ParseError.wrap do
+          doc = Commonmarker.parse(
+            source,
+            options: { parse: { sourcepos_chars: true },
+                       extension: { front_matter_delimiter: "---" } },
+          )
+          doc.each do |node|
+            next unless node.type == :frontmatter
+
+            pos = node.source_position
+            content_start = line_starts[pos[:start_line]]
+            content_end = line_starts[pos[:end_line] - 1]
+            break if content_start.nil? || content_end.nil? || content_end <= content_start
+
+            content = chars[content_start...content_end].join
+            Yaml.yaml_spans(content, keys).each do |span|
+              spans << Spans::Span.new(span.start + content_start, span.end + content_start)
+            end
+            break
+          end
+        end
+        spans
+      end
 
       # Locates the processable spans of a Markdown document. dialect must already be validated
       # via resolve_dialect (== "commonmark"); this function does not re-check it.

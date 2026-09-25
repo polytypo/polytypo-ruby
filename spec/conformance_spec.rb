@@ -29,6 +29,7 @@ RSpec.describe "conformance fixtures" do
         opts[:rules] = c["rules"] if c["rules"]
         opts[:narrow_nbsp] = c["narrowNbsp"] if c["narrowNbsp"]
         opts[:keys] = c["keys"] if c["keys"]
+        opts[:frontmatter_keys] = c["frontmatterKeys"] if c["frontmatterKeys"]
 
         if c["throws"]
           expect { Polytypo.transform(c["in"], **opts) }

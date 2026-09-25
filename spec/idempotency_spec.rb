@@ -96,6 +96,41 @@ RSpec.describe "idempotency" do
     expect(broken).to eq([])
   end
 
+  # modes.md 5, spec 1.7.0: the "markdown" sweep must also carry a template with a frontmatter
+  # block and frontmatter_keys naming a key in it. Such a document has TWO text units (3.1), a
+  # composition no single-unit template reaches: the pipeline runs twice and the two edit sets are
+  # merged into one emission, so a mistake there shows up as a document that is not a fixed point
+  # even though each unit is. The alphabet is the yaml one, since the scan inside the block is
+  # 3.8's.
+  it "is idempotent over a bounded sweep of markdown documents with a processed frontmatter block" do
+    alphabet = ['"', "'", "-", ":", "#", " ", ".", "a", "---"]
+    templates = {
+      "plain scalar and body" => ->(a, b) { "---\nk: #{a}\n---\n\n#{b}\n" },
+      "two scalars" => ->(a, b) { "---\nk: #{a}\nj: #{b}\n---\n\nbody\n" },
+      "block scalar and body" => ->(a, b) { "---\nk: |\n  #{a}\n---\n\nbody #{b} end\n" },
+    }
+    payloads = []
+    bounded_strings(alphabet, 2) { |text| payloads << text }
+    broken = []
+    locales.each do |locale|
+      templates.each do |label, build|
+        payloads.each do |a|
+          payloads.each do |b|
+            next if broken.length >= 10
+
+            source = build.call(a, b)
+            opts = { locale: locale, mode: "markdown", dialect: "commonmark",
+                     frontmatter_keys: %w[k j] }
+            once = Polytypo.transform(source, **opts)
+            twice = Polytypo.transform(once, **opts)
+            broken << "#{locale} #{label}: #{source.inspect} -> #{once.inspect}" if twice != once
+          end
+        end
+      end
+    end
+    expect(broken).to eq([])
+  end
+
   it "is idempotent for mixed-kind straight marks (the shape that broke quotes' first attempt)" do
     alphabet = ['"', "'", "a", " ", "."]
     broken = []

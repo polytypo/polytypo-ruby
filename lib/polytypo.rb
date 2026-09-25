@@ -32,7 +32,8 @@ module Polytypo
   #
   # Only `mode: "text"`/`"html"` ever touch this file's own requires; `mode: "markdown"` lazily
   # requires "commonmarker" from within Modes::Markdown, never at load time of this file.
-  def self.transform(input, locale:, mode: "text", dialect: nil, keys: nil, rules: nil, narrow_nbsp: nil)
+  def self.transform(input, locale:, mode: "text", dialect: nil, keys: nil, rules: nil, narrow_nbsp: nil,
+                     frontmatter_keys: nil)
     resolved_mode = resolve_mode(mode)
     narrow_target = Engine.resolve_narrow_target(narrow_nbsp)
 
@@ -53,7 +54,7 @@ module Polytypo
       end
       transform_yaml(input, locale, keys, rules, narrow_target)
     else # "markdown"
-      transform_markdown(input, locale, dialect, rules, narrow_target)
+      transform_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys)
     end
   end
 
@@ -69,7 +70,8 @@ module Polytypo
   # for the text (analyze.md sections 4 and 5).
   #
   # Pure and thread-safe on the same terms as .transform.
-  def self.analyze(input, locale:, mode: "text", dialect: nil, keys: nil, rules: nil, narrow_nbsp: nil)
+  def self.analyze(input, locale:, mode: "text", dialect: nil, keys: nil, rules: nil, narrow_nbsp: nil,
+                   frontmatter_keys: nil)
     resolved_mode = resolve_mode(mode)
     narrow_target = Engine.resolve_narrow_target(narrow_nbsp)
 
@@ -90,7 +92,7 @@ module Polytypo
       end
       analyze_yaml(input, locale, keys, rules, narrow_target)
     else # "markdown"
-      analyze_markdown(input, locale, dialect, rules, narrow_target)
+      analyze_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys)
     end
   end
 
@@ -143,18 +145,30 @@ module Polytypo
   end
   private_class_method :transform_yaml
 
-  def self.transform_markdown(input, locale, dialect, rules, narrow_target)
+  def self.transform_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys = nil)
     # Validation order is public, tested behaviour, identical across every runtime: rules (an
-    # unknown rule id), then locale (an unknown locale), then dialect/parsing.
+    # unknown rule id), then locale (an unknown locale), then dialect, then frontmatter_keys, then
+    # parsing (modes.md 3.7.4).
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     require_relative "polytypo/modes/markdown"
     Modes::Markdown.resolve_dialect(dialect)
-    spans = Modes::Markdown.markdown_spans(input)
+    resolved_keys = Engine.resolve_frontmatter_keys(frontmatter_keys)
     ctx = Engine::RuleContext.new(mode: "markdown", dialect: dialect, locale: resolved_locale,
                                   narrow_target: narrow_target)
     cp = Engine::Codepoints.to_codepoints(input)
-    Modes::Runner.run_over_spans(cp, spans, plan, locale_data, ctx)
+    Modes::Runner.run_over_units(cp, markdown_units(input, resolved_keys), plan, locale_data, ctx)
   end
+
+  # modes.md 3.7.4: the body, and -- only when the caller named frontmatter keys -- the
+  # frontmatter block as a second text unit. With frontmatter_keys nil this is exactly the single
+  # unit every document had before spec 1.7.0, which is why no released output can move.
+  def self.markdown_units(input, resolved_keys)
+    body = Modes::Markdown.markdown_spans(input)
+    return [body] if resolved_keys.nil?
+
+    [Modes::Markdown.frontmatter_spans(input, resolved_keys), body]
+  end
+  private_class_method :markdown_units
   private_class_method :transform_markdown
 
   def self.analyze_text(input, locale, rules, narrow_target)
@@ -187,16 +201,17 @@ module Polytypo
   end
   private_class_method :analyze_yaml
 
-  def self.analyze_markdown(input, locale, dialect, rules, narrow_target)
+  def self.analyze_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys = nil)
     # Validation order is public, tested behaviour and is shared with .transform: rules, then
-    # locale, then dialect/parsing (analyze.md section 4, A1).
+    # locale, then dialect, then frontmatter_keys, then parsing (analyze.md section 4, A1).
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     require_relative "polytypo/modes/markdown"
     Modes::Markdown.resolve_dialect(dialect)
-    spans = Modes::Markdown.markdown_spans(input)
+    resolved_keys = Engine.resolve_frontmatter_keys(frontmatter_keys)
     ctx = Engine::RuleContext.new(mode: "markdown", dialect: dialect, locale: resolved_locale,
                                   narrow_target: narrow_target)
-    Modes::Runner.analyze_over_spans(Engine::Codepoints.to_codepoints(input), spans, plan, locale_data, ctx)
+    Modes::Runner.analyze_over_units(Engine::Codepoints.to_codepoints(input),
+                                     markdown_units(input, resolved_keys), plan, locale_data, ctx)
   end
   private_class_method :analyze_markdown
 end

@@ -34,17 +34,46 @@ module Polytypo
       # source_cp is the whole input already converted to code points; spans address it by
       # code-point index.
       def self.run_over_spans(source_cp, spans, plan, locale_data, ctx)
+        emit(source_cp, replacements_of_unit(source_cp, spans, plan, locale_data, ctx))
+      end
+
+      # modes.md 3.1 and 3.5 step 3 (spec 1.7.0). A document has one text unit, except in
+      # "markdown" with frontmatter_keys, where the frontmatter block's spans form a unit of their
+      # own. The pipeline runs once per unit and the two edit sets are disjoint, because no span of
+      # one unit lies inside the other -- which is what the body's walk skipping the block
+      # guarantees. Only step 5 is shared: the source is emitted once, in document order.
+      def self.run_over_units(source_cp, units, plan, locale_data, ctx)
+        replacements = units.flat_map do |spans|
+          replacements_of_unit(source_cp, spans, plan, locale_data, ctx)
+        end
+        emit(source_cp, replacements.sort_by { |span, _piece| span.start })
+      end
+
+      # analyze_over_spans per text unit (modes.md 3.1), reported in document order.
+      def self.analyze_over_units(source_cp, units, plan, locale_data, ctx)
+        units.flat_map { |spans| analyze_over_spans(source_cp, spans, plan, locale_data, ctx) }
+             .sort_by(&:start)
+      end
+
+      # One text unit: the marker-separated concatenation, the pipeline, and the pieces it
+      # produced, paired with the spans they replace.
+      def self.replacements_of_unit(source_cp, spans, plan, locale_data, ctx)
         normalized = Spans.normalize_spans(spans)
-        return source_cp.pack("U*") if normalized.empty?
+        return [] if normalized.empty?
 
         concatenated = Spans.concatenate_spans(source_cp, normalized)
         transformed = run_rules_over_spans(concatenated, plan, locale_data, ctx)
         pieces = Spans.split_on_marker(transformed, normalized.length)
+        normalized.each_with_index.map { |span, i| [span, pieces[i]] }
+      end
+      private_class_method :replacements_of_unit
 
+      # modes.md 4: the source with disjoint replacements applied at recorded offsets, and nothing
+      # else changed.
+      def self.emit(source_cp, replacements)
         out = []
         cursor = 0
-        normalized.each_with_index do |span, i|
-          piece = pieces[i]
+        replacements.each do |span, piece|
           original = source_cp[span.start...span.end]
           out.concat(source_cp[cursor...span.start])
           out.concat(piece == original ? original : piece)
@@ -53,6 +82,7 @@ module Polytypo
         out.concat(source_cp[cursor..])
         out.pack("U*")
       end
+      private_class_method :emit
 
       # run_over_spans, reporting instead of applying (analyze.md section 1). The span table
       # supplies the origin map, so every change comes back in DOCUMENT coordinates -- analyze.md
