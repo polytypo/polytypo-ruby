@@ -23,12 +23,39 @@
 # Paths listed in <dir>/.not-canonical are skipped — the files this repository authors itself. A
 # listed path that DOES exist in canonical is an error, not an exemption: the list cannot be used
 # to fork a canonical file. A vendored file with no canonical counterpart fails, so a renamed or
-# deleted canonical file cannot pass unnoticed. Completeness is deliberately not checked: each
-# runtime vendors only the subset it needs, and the subsets differ.
+# deleted canonical file cannot pass unnoticed.
+#
+# Completeness is checked the other way round, against canonical's own tree rather than a list of
+# what this tree holds: every file canonical has at that tag must be here, unless <dir>/.not-vendored
+# names it. Comparing only the files present would let a deleted one pass — measured: removing two
+# rule documents from a tree left the check green, reporting a smaller file count and nothing else.
+# The list names deliberate omissions (each runtime vendors only the subset it needs, and the
+# subsets differ), so a canonical file that arrives later is protected the moment it exists rather
+# than the moment someone remembers to list it. An entry canonical does not have at that tag is an
+# error, and so is an entry that is also present here: like .not-canonical, the list cannot be used
+# as an unconstrained exemption. A missing .not-vendored means nothing is omitted.
+#
+# Finally, the version itself: this tree claiming spec 1.6.1 while canonical has tagged 1.6.3 is
+# self-consistent and out of date, and only the second half of that is visible from here. Canonical
+# legitimately runs ahead between a spec release and this repository's re-vendor, so being behind is
+# a warning by default, and an error with --require-current — which the release workflow passes,
+# because a package must not be published claiming a spec version canonical has already moved past.
 set -eu
 
-usage='usage: check-vendored-spec.sh <vendored-spec-dir>'
-vendor=${1:?$usage}
+usage='usage: check-vendored-spec.sh <vendored-spec-dir> [--require-current]'
+vendor=''
+require_current=0
+for arg in "$@"; do
+  case $arg in
+    --require-current) require_current=1 ;;
+    -*) echo "unknown option: $arg" >&2; echo "$usage" >&2; exit 1 ;;
+    *)
+      [ -z "$vendor" ] || { echo "$usage" >&2; exit 1; }
+      vendor=$arg
+      ;;
+  esac
+done
+[ -n "$vendor" ] || { echo "$usage" >&2; exit 1; }
 vendor=${vendor%/}
 canonical_repo=${CANONICAL_REPO:-https://github.com/polytypo/polytypo.git}
 
@@ -64,13 +91,14 @@ git clone --quiet --depth 1 --branch "$tag" "$canonical_repo" "$tmp/canonical" 2
 
 : > "$tmp/skip"
 echo '.not-canonical' >> "$tmp/skip"
+echo '.not-vendored' >> "$tmp/skip"
 if [ -f "$vendor/.not-canonical" ]; then
   sed -e 's/#.*$//' -e 's/[[:space:]]*//g' "$vendor/.not-canonical" | grep -v '^$' >> "$tmp/skip" || true
 fi
 
 forked=''
 while IFS= read -r skip; do
-  [ "$skip" = '.not-canonical' ] && continue
+  case $skip in .not-canonical | .not-vendored) continue ;; esac
   [ -e "$tmp/canonical/spec/$skip" ] && forked="$forked $skip"
 done < "$tmp/skip"
 [ -z "$forked" ] || {
@@ -80,7 +108,36 @@ done < "$tmp/skip"
   exit 1
 }
 
+: > "$tmp/omitted"
+if [ -f "$vendor/.not-vendored" ]; then
+  sed -e 's/#.*$//' -e 's/[[:space:]]*//g' "$vendor/.not-vendored" | grep -v '^$' | LC_ALL=C sort > "$tmp/omitted" || true
+fi
+
+phantom=''
+kept=''
+while IFS= read -r omit; do
+  [ -f "$tmp/canonical/spec/$omit" ] || phantom="$phantom $omit"
+  [ -e "$vendor/$omit" ] && kept="$kept $omit"
+done < "$tmp/omitted"
+[ -z "$phantom" ] || {
+  echo "$vendor/.not-vendored lists path(s) canonical does not have at $tag:$phantom" >&2
+  echo "That list records what this repository deliberately does not vendor, so every entry names" >&2
+  echo "a real canonical file. A stale entry silently stops protecting whatever replaced it." >&2
+  exit 1
+}
+[ -z "$kept" ] || {
+  echo "$vendor/.not-vendored lists path(s) this tree does have:$kept" >&2
+  echo "A file cannot be both omitted and vendored. Remove the entry — the file is checked like" >&2
+  echo "every other one — or remove the file." >&2
+  exit 1
+}
+
 find "$vendor" -type f -print | sed "s|^$vendor/||" | LC_ALL=C sort > "$tmp/vendored"
+
+# spec/fixtures/.escaped/ is a generated review mirror, documented as such in canonical and
+# gitignored there, so it is never part of what a snapshot vendors.
+(cd "$tmp/canonical/spec" && find . -type f -print) |
+  sed -e 's|^\./||' -e '\|^fixtures/\.escaped/|d' | LC_ALL=C sort > "$tmp/canonical-files"
 
 with_sources=0
 without_sources=0
@@ -134,15 +191,47 @@ while IFS= read -r rel; do
   esac
 done < "$tmp/vendored"
 
-differing=$(wc -l < "$tmp/report" | tr -d ' ')
-if [ "$differing" -ne 0 ]; then
-  echo "$vendor does not match canonical $tag — $differing of $checked file(s):" >&2
+omitted=0
+while IFS= read -r rel; do
+  if grep -Fxq "$rel" "$tmp/omitted"; then
+    omitted=$((omitted + 1))
+    continue
+  fi
+  [ -f "$vendor/$rel" ] ||
+    printf 'missing from this tree       %s\n' "$rel" >> "$tmp/report"
+done < "$tmp/canonical-files"
+
+problems=$(wc -l < "$tmp/report" | tr -d ' ')
+if [ "$problems" -ne 0 ]; then
+  echo "$vendor does not match canonical $tag — $problems problem(s) in $checked file(s) checked:" >&2
   cat "$tmp/report" >&2
   echo >&2
-  echo "Re-copy them from https://github.com/polytypo/polytypo/tree/$tag/spec. If canonical has" >&2
-  echo "instead moved on without a version bump, fix that first: the vendored VERSION names the" >&2
-  echo "tag this tree is checked against, and a released spec is not amended in place." >&2
+  echo "Re-copy them from https://github.com/polytypo/polytypo/tree/$tag/spec. A file this" >&2
+  echo "repository deliberately does not vendor belongs in $vendor/.not-vendored instead. If" >&2
+  echo "canonical has moved on without a version bump, fix that first: the vendored VERSION names" >&2
+  echo "the tag this tree is checked against, and a released spec is not amended in place." >&2
   exit 1
 fi
 
-echo "$vendor matches canonical $tag ($checked files checked)."
+newest=$(git ls-remote --tags "$canonical_repo" 'spec-v*' 2>"$tmp/ls-remote.err" |
+  sed -n 's|.*refs/tags/spec-v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$|\1|p' |
+  sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1)
+[ -n "$newest" ] || {
+  echo "cannot list canonical's spec-v* tags, so this tree's currency is unknown:" >&2
+  cat "$tmp/ls-remote.err" >&2
+  exit 1
+}
+
+echo "$vendor matches canonical $tag ($checked files checked, $omitted deliberately not vendored)."
+
+if [ "$newest" != "$version" ]; then
+  if [ "$require_current" -eq 1 ]; then
+    echo "canonical's newest spec tag is spec-v$newest, and this tree claims $version." >&2
+    echo "A package must not be published claiming a spec version canonical has moved past:" >&2
+    echo "re-vendor spec-v$newest first, then release." >&2
+    exit 1
+  fi
+  echo "::warning::vendored spec is $version; canonical's newest tag is spec-v$newest. Re-vendor before releasing."
+  echo "This tree is self-consistent and behind. Canonical runs ahead between a spec release and"
+  echo "this repository's re-vendor, so this is a notice here and an error in the release job."
+fi

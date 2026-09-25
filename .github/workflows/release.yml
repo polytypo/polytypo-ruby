@@ -36,9 +36,12 @@ jobs:
       # The step above proves the tag exists; this one proves the vendored tree equals it.
       # CI on main runs the same check, but a tag can be pushed to a commit CI never saw,
       # and this is the last point before a package is built from that tree
-      # (polytypo/polytypo#56).
+      # (polytypo/polytypo#56). --require-current also refuses to publish a package claiming
+      # a spec version canonical has already moved past; CI only warns about that, because
+      # canonical legitimately runs ahead between a spec release and this repository's
+      # re-vendor.
       - name: Verify the vendored spec matches that tag
-        run: sh script/check-vendored-spec.sh lib/polytypo/data
+        run: sh script/check-vendored-spec.sh lib/polytypo/data --require-current
 
       - name: Lint (RuboCop)
         run: bundle exec rubocop

@@ -48,5 +48,8 @@ jobs:
       # documentation that contradicted their own engine (polytypo/polytypo#56). This compares
       # every vendored file against canonical at the tag the vendored VERSION names, so a stale
       # copy — or a released spec amended in place — fails here rather than reaching a package.
+      # Completeness is checked against canonical's own tree, so a deleted vendored file fails
+      # too, and a tree current with the tag it claims while canonical has tagged a newer
+      # version is a warning here and a refusal in the release job.
       - name: Compare against canonical spec tag
         run: sh script/check-vendored-spec.sh lib/polytypo/data

@@ -18,17 +18,22 @@ one copy, shipped as part of the gem's own `lib/` payload and loaded via `File.r
 Editing a file here does not change the spec; it only drifts this copy from canonical. When
 canonical's `spec/` changes, re-copy the affected files here.
 
-CI checks that it was done. `script/check-vendored-spec.sh` compares every file in this
-directory against canonical `polytypo/polytypo` at tag `spec-v` + this directory's own
-`VERSION`, and fails on any difference. Three details. The files this repository authors
-itself are listed in `.not-canonical` and skipped — and a listed path that canonical *does*
-have is an error, so that list cannot be used to keep a forked copy of a canonical file. A
-`locales/*.json` file is compared in full when it carries its `sources` array, and against
-canonical minus that array when it does not, which is the shipped form three of the five
-runtimes vendor; the script reads which case it is off the file rather than being told. And a
-file here with no canonical counterpart is a failure, so a canonical rename cannot pass
-unnoticed. Completeness is deliberately not checked — each runtime vendors its own subset,
-and the subsets differ.
+CI checks that it was done. `script/check-vendored-spec.sh` compares every file in this directory
+against canonical `polytypo/polytypo` at tag `spec-v` + this directory's own `VERSION`, and fails
+on any difference. Five details. The files this repository authors itself are listed in
+`.not-canonical` and skipped — and a listed path that canonical *does* have is an error, so that
+list cannot be used to keep a forked copy of a canonical file. A `locales/*.json` file is compared
+in full when it carries its `sources` array, and against canonical minus that array when it does
+not, which is the shipped form three of the five runtimes vendor; the script reads which case it
+is off the file rather than being told. A file here with no canonical counterpart is a failure, so
+a canonical rename cannot pass unnoticed. Completeness is checked from canonical's side rather
+than this one: every file canonical has at that tag must be here unless `.not-vendored` names it,
+so a vendored file that was deleted, or a canonical file that arrived later and was never copied,
+fails naming itself, and an entry canonical does not have at that tag, or one that is also present
+here, fails too. Here that list names `CONFORMANCE.md`, and nothing else. And the version itself
+is checked: a tree faithful to the tag it claims while canonical has tagged a newer one is a
+warning in CI and, with `--require-current`, a refusal in the release job, because a package must
+not be published claiming a spec version canonical has moved past.
 
 Before that check existed, this half of the tree went stale unnoticed in four of the five
 ports at once: the data half is proved by the test suite, and nothing at all read the prose.
