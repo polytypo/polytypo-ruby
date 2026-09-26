@@ -74,6 +74,138 @@ RSpec.describe "markdown frontmatter_keys (spec/rules/modes.md 3.7.4)" do
     end
   end
 
+  # spec/rules/modes.md 3.7.3a (spec 1.8.0). The block's extent is this runtime's own scan, not
+  # comrak's front_matter_delimiter extension: that extension required both fences to match the
+  # literal string exactly, so one trailing space handed the metadata to the rules as prose
+  # (polytypo/polytypo#58). The fixtures pin one trailing space, one trailing tab and the
+  # negatives; what follows is the rest of the edge surface, and every example asserts BOTH halves
+  # -- the body's skip and the option's content range -- because one scan answering both is the
+  # claim the section makes.
+  describe "where the block begins and ends (3.7.3a)" do
+    def fenced(opener, closer, eol: "\n", title: %(a "b"), body: %(Body "c" here.))
+      [opener, "title: #{title}", closer, "", body].map { |line| line + eol }.join
+    end
+
+    def spans_text(source, keys)
+      chars = source.chars
+      Polytypo::Modes::Markdown.frontmatter_spans(source, Set[*keys]).map { |s| chars[s.start...s.end].join }
+    end
+
+    def expect_block(source, opener, closer, eol: "\n")
+      skipped = fenced(opener, closer, eol: eol, body: %(Body “c” here.))
+      expect(md(source)).to eq(skipped)
+      expect(spans_text(source, ["title"])).to eq([%(a "b")])
+      expect(md(source, frontmatter_keys: ["title"]))
+        .to eq(fenced(opener, closer, eol: eol, title: %(a “b”), body: %(Body “c” here.)))
+    end
+
+    it "admits several trailing spaces on the opening fence" do
+      expect_block(fenced("---   ", "---"), "---   ", "---")
+    end
+
+    it "admits a trailing tab on either fence" do
+      expect_block(fenced("---\t", "---\t"), "---\t", "---\t")
+    end
+
+    it "admits a mix of spaces and tabs, in any order" do
+      expect_block(fenced("--- \t \t", "---\t "), "--- \t \t", "---\t ")
+    end
+
+    it "admits trailing whitespace on the closing fence alone" do
+      expect_block(fenced("---", "--- "), "---", "--- ")
+    end
+
+    it "gives a CRLF document with a trailing space on its fence the same block as LF would" do
+      source = fenced("--- ", "---", eol: "\r\n")
+      # The span text carries no U+000D: it belongs to the terminator, which is outside every span.
+      expect_block(source, "--- ", "---", eol: "\r\n")
+      crlf = md(source, frontmatter_keys: ["title"])
+      lf = md(fenced("--- ", "---"), frontmatter_keys: ["title"])
+      expect(crlf.gsub("\r\n", "\n")).to eq(lf)
+    end
+
+    it "closes on a last line that carries no terminator" do
+      source = %(--- \ntitle: a "b"\n--- )
+      expect(md(source)).to eq(source)
+      expect(spans_text(source, ["title"])).to eq([%(a "b")])
+      expect(md(source, frontmatter_keys: ["title"])).to eq(%(--- \ntitle: a “b”\n--- ))
+    end
+
+    it "gives both halves the same answer where there is no block" do
+      sources = [
+        %(--- yaml\ntitle: a "b"\n---\n\nBody\n),    # step 2: not whitespace after the delimiter
+        %(----\ntitle: a "b"\n----\n\nBody\n),       # a fourth dash is not whitespace either
+        %( ---\ntitle: a "b"\n---\n\nBody\n),        # step 1: the document must BEGIN with it
+        %(---\ntitle: a "b"\n ---\n\nBody\n),        # step 3: a closer is a line, not found in one
+        %(---\ntitle: a "b"\n+++\n\nBody\n),         # step 3: the closer is the same delimiter
+        %(---\ntitle: a "b"\n...\n\nBody\n),         # step 3: "..." closes nothing
+        %(---\ntitle: a "b"\n\nBody\n)               # step 4: no closer, no block
+      ]
+      sources.each do |source|
+        expect(spans_text(source, ["title"])).to eq([]), source.inspect
+        expect(md(source, frontmatter_keys: ["title"])).to eq(md(source)), source.inspect
+      end
+    end
+
+    it "treats an opener immediately followed by a closer as a block with no content" do
+      source = %(--- \n---\n\nBody "c" here.\n)
+      expect(spans_text(source, ["title"])).to eq([])
+      expect(md(source, frontmatter_keys: ["title"])).to eq(%(--- \n---\n\nBody “c” here.\n))
+    end
+
+    it "steps over a single leading byte-order mark, offsets included" do
+      source = %(﻿--- \ntitle: a "b"\n---\n\nBody "c" here.\n)
+      expect(md(source)).to eq(%(﻿--- \ntitle: a "b"\n---\n\nBody “c” here.\n))
+      # The mark shifts every offset in the block by one, which is what a fixture on the skip
+      # path cannot catch: there a wrong extent costs prose, here it costs the right characters.
+      expect(spans_text(source, ["title"])).to eq([%(a "b")])
+      expect(md(source, frontmatter_keys: ["title"])).to eq(%(﻿--- \ntitle: a “b”\n---\n\nBody “c” here.\n))
+    end
+
+    it "skips a TOML block whole when its fence carries whitespace, and still yields no spans" do
+      source = %(+++ \ntitle = "a - b"\n+++\n\nBody - here.\n)
+      expect(md(source)).to eq(%(+++ \ntitle = "a - b"\n+++\n\nBody—here.\n))
+      expect(spans_text(source, ["title"])).to eq([])
+      expect(md(source, frontmatter_keys: ["title"])).to eq(md(source))
+    end
+
+    it "masks the block out of the source the parser sees" do
+      # A fence inside a metadata value would otherwise pair with the body's own fence, and the
+      # body's code block and its prose would swap roles. Suppressing spans cannot repair that:
+      # the damage is in what the parser concluded.
+      source = %(--- \nx: |\n  ```\n---\n\n```\ncode "q" here\n```\n\nBody "q" here.\n)
+      masked = %(--- \nx: |\n  ```\n---\n\n```\ncode "q" here\n```\n\nBody “q” here.\n)
+      expect(md(source)).to eq(masked)
+      expect(md(source, frontmatter_keys: ["x"])).to eq(masked)
+    end
+
+    it "reads the block's lines as CommonMark does, with lone carriage returns" do
+      source = %(---\rtitle: "Une note"\r---\r\rBody has "quotes" here.\r)
+      expect(md(source)).to eq(%(---\rtitle: "Une note"\r---\r\rBody has “quotes” here.\r))
+      # And a final U+000D with no U+000A still closes the block: end of input ends a line.
+      expect(md(%(---\r\ntitle: "Une note"\r\n---\r))).to eq(%(---\r\ntitle: "Une note"\r\n---\r))
+    end
+
+    it "declines only the content line that carries the stray carriage return (3.7.4)" do
+      # Per line, as 3.8.4 step 1 declines a line containing U+0009: a stray U+000D inside one
+      # value costs that value, not the block. The content scan reads the ORIGINAL U+000D -- the
+      # replacement that works around comrak's column defect is the parser's copy only.
+      source = %(---\ntitle: a\r"b"\nsummary: c "d"\n---\n\nBody "e".\n)
+      expect(spans_text(source, %w[title summary])).to eq([%(c "d")])
+      expect(md(source, frontmatter_keys: %w[title summary]))
+        .to eq(%(---\ntitle: a\r"b"\nsummary: c “d”\n---\n\nBody “e”.\n))
+    end
+
+    it "declines the content of a lone-carriage-return block outright (3.7.4)" do
+      # The block is found by CommonMark's line model and the content read by 3.8.4's LF-only one,
+      # which would see one line, pair marks across mapping lines and put the U+000D in a span.
+      [%(---\rtitle: a "b"\r---\r\rBody "c".\r), %(---\rtitle: a "b"\rslug: "x"\r---\r\rBody "c".\r)].each do |source|
+        expect(spans_text(source, ["title"])).to eq([]), source.inspect
+        expect(md(source, frontmatter_keys: ["title"])).to eq(md(source)), source.inspect
+      end
+    end
+  end
+
   describe "the block is its own text unit" do
     it "cannot pair an unbalanced mark across the block" do
       source = %(---\ntitle: He said "hello\n---\n\nworld" she said\n)

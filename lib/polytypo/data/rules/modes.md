@@ -7,12 +7,13 @@ for all five runtimes and is parser-agnostic by construction: `parse5`, `nokogir
 `golang.org/x/net/html` and PHP's DOM disagree about almost everything this document does not
 forbid them from doing. `yaml` mode is parser-**free** rather than parser-agnostic, for the
 reason §3.8.1 measures.
-**Spec version:** 1.7.0 (0.1.0 for everything except §3.3's class-membership table rows for
+**Spec version:** 1.8.0 (0.1.0 for everything except §3.3's class-membership table rows for
 `nbsp` and `apostrophe`, split in 1.2.0, §3.8, added in 1.3.0, §3.3's note on `quotes`'
 span-boundary elision veto reading the marker as a trigger, added in 1.4.0 — which changes no
 row of the table it follows — §3.3's `CLOSEDELIM` entry, added in 1.5.0, and §3.7.4 with the
 amendments it carries to §3.1's definitions, §3.2's Model C, §3.5 step 3, §3.7.3's frontmatter
-bullet, §3.8.6's accepted-cost paragraph, §5, §6 and §7, added in 1.7.0).
+bullet, §3.8.6's accepted-cost paragraph, §5, §6 and §7, added in 1.7.0, and §3.7.3a, added in
+1.8.0).
 
 ---
 
@@ -524,6 +525,149 @@ lower-cases JSX names before matching will skip a component's children.
 Nesting follows the same rule as `html`: a skipped construct is skipped whole, including
 anything that looks processable inside it.
 
+#### 3.7.3a Where the frontmatter block begins and ends
+
+**Spec 1.8.0.** §3.7.3 skips "a metadata block at the very start of the document, delimited by
+`---` (YAML) or `+++` (TOML)". That is prose, and frontmatter is in neither CommonMark nor GFM,
+so until now each runtime reached the construct through its own parser's frontmatter support —
+four extensions, four answers. Measured on the published 1.7.0 line, `en-US`, `commonmark`,
+asking only whether the block is skipped or typeset as prose:
+
+| document                                    | JS      | Python  | Go          | Ruby        |
+| ------------------------------------------- | ------- | ------- | ----------- | ----------- |
+| `---` / `title: "x - y"` / `---`            | skipped | skipped | skipped     | skipped     |
+| trailing space on the **opening** delimiter | skipped | skipped | **typeset** | **typeset** |
+| trailing space on the **closing** delimiter | skipped | skipped | **typeset** | **typeset** |
+| `...` as the closer                         | typeset | typeset | typeset     | typeset     |
+| `---` after a leading blank line            | typeset | typeset | typeset     | typeset     |
+
+Two of four turn `date: "2026-09-26"` into a quoted-and-curled string over one trailing space
+that no author typed on purpose, and both were conformant, because no fixture pinned the edge.
+
+> **The block's extent is decided by the scan below, not by a parser's frontmatter support.** A
+> runtime whose parser also recognises the construct must produce the same extent as this scan; the
+> scan is what a fixture pins and what a disagreement is measured against.
+>
+> **And the parser is handed the block masked out.** The source given to the Markdown parser is the
+> document with the located block — both delimiter lines included, **and the leading U+FEFF of step
+> 1 if there is one** — replaced by U+0020, line terminators kept as they are, so that nothing
+> inside the block can form or close a construct in the body.
+>
+> **The masked source must be positionally aligned with the original in the unit the runtime maps
+> parser offsets back through.** That is the invariant, and it is not the same as "one U+0020 per
+> code point": a runtime that hands its parser's byte offsets straight through owes byte-length
+> preservation, and masking `😀` to a single space shortens its source by three and shifts every
+> body offset after it. A runtime that converts offsets against the **masked** source before
+> reading them against the original owes code-point alignment only, which one U+0020 per code point
+> gives it — and in a language whose strings are sequences of code points, byte-length preservation
+> cannot even be expressed. Both are conformant; stating it as an index-unit count was not, and the
+> port that indexes code points while its parser counts bytes is what showed it.
+>
+> **And no span may lie inside the block, whatever the parser did with the masked text.** Masking
+> is what makes that true for most parsers and it is not sufficient for all of them: measured,
+> tree-sitter-markdown reads a final all-space line with no terminator as a paragraph, so a
+> document whose closing `---` ends the file comes back with a span over the delimiter itself —
+> the parser did not see the block at all, and step 5's "end of input ends a line" is the clause it
+> does not implement. A runtime whose parser emits such a span **clips it to the part outside the
+> block, and drops it when nothing is left**: the block's own characters must not reach the rules,
+> and body prose past the block must not be lost to a parser's mistake about where the block ended.
+> The mask is there so the parse is not deformed; this rule is there so the spans cannot be wrong
+> even when it is.
+>
+> The mark is masked with the block because leaving it out breaks both: a first line of U+FEFF
+> followed by spaces is not blank, no parser is required to strip the mark, and goldmark does not.
+
+Masking is not an implementation note, and the runtime that skipped it is measured. Suppressing a
+span inside the block's range is not enough, because the parser has already read the block's
+characters by then: a fenced-code line inside a metadata value pairs with the body's own fence, and
+the body's code block and its prose swap places. One document, the same call in four runtimes, on
+published 1.7.0:
+
+````
+--- 
+x: |
+  ```
+---
+
+```
+code "q"
+```
+
+Body "q".
+````
+
+| runtime    | result                                                                      |
+| ---------- | --------------------------------------------------------------------------- |
+| JS, Python | `code "q"` stays straight, `Body “q”` converts — correct                    |
+| Go         | **`code “q”` is typeset inside the code block**, and `Body "q"` is missed    |
+| Ruby       | correct with this bare-looking fence, wrong the moment the fence has a space |
+
+Go reaches that by parsing the whole source and suppressing spans in the block's range, which is
+the obvious way to do it without a frontmatter-aware parser and is wrong for a reason no span-level
+rule can see: the damage is in what the parser concluded, not in which spans were emitted. Masking
+costs one pass over a known range and removes the class.
+
+**The scan**, over the source's code-point array, in §3.8.4's terms:
+
+1. the document must **begin** with the delimiter — `---` or `+++` at offset 0, no leading blank
+   line and no indentation. **A single leading U+FEFF is stepped over first** and is not part of
+   the document for this scan. It is a byte-order mark, not content: every editor that writes one
+   writes it before the fence, and reading it as content would deny the block to every file some
+   Windows editors produce. Measured on 1.7.0, JS and Python already step over it and Go and Ruby
+   do not — the same two-against-two split, on the same damaging side, as the trailing space;
+2. the rest of that line must be only U+0020 and U+0009. Anything else and there is no block, and
+   what the line then is belongs to the dialect rather than to this scan: `--- yaml` is not a
+   thematic break, since a break admits only spaces and tabs after its run;
+3. the **closing line** is the first later line whose first code point begins the same delimiter,
+   followed by only U+0020 and U+0009. Indentation disqualifies it exactly as it disqualifies the
+   opening line — a closer is not searched for inside a line, it is a line. `...` is not a closer
+   in either matter, a delimiter of the other kind is not one either, and a fourth delimiter
+   character is not whitespace, so `----` closes nothing;
+4. with no such line there is **no block**, and the opening delimiter is whatever the dialect makes
+   of it — a thematic break for `---`, ordinary paragraph text for `+++` — with everything after it
+   prose, which is what `en-us-markdown-commonmark-frontmatter-unterminated` already pins;
+5. a **line ends as CommonMark ends one** — at U+000A, at a U+000D that is not followed by
+   U+000A, or at the end of input — and the terminator is never part of the line. So a CRLF
+   document gives the same block as the same bytes with LF, a file whose last line is `---\r`
+   with no final U+000A still closes its block, and a document written with lone U+000D line
+   endings has one at all.
+
+   **This is the Markdown document's line model, and it is deliberately not §3.8.4's.** The block
+   is a Markdown construct, so it ends its lines the way the language around it does. The content
+   inside it keeps §3.8.4's LF-only model — and the reason is not that YAML agrees, because it
+   does not: YAML 1.2.2 §5.4 admits a lone U+000D as a line break too. §3.8.4 is a deliberate
+   simplification, taken and measured in 1.3.0, and this section does not widen it, because
+   widening the content scan's line model is a change to `yaml` mode for every caller and wants
+   its own measurement. A port that harmonises the two has silently made that change. What it
+   costs here is recorded in §7.13.
+
+   All three shapes above are documents whose metadata a stricter reading hands to the rules, and
+   the reference runtime already treats all three as blocks — measured on 1.7.0.
+
+**Which way to be wrong, and why this way.** A locator errs in one of two directions and they are
+not the same size. Recognising a block that is not one skips text that was prose: a miss, and
+§3.8.3 already accepts misses by the dozen. Failing to recognise a block that is one hands the
+metadata to the rules as prose: `title: Q3 review: what changed` takes a no-break space before
+its colon in `fr` — U+00A0, since `fr` puts `:` in `beforePunctuation` and only `;`, `!` and `?`
+in the narrow list — and a date grows quotation marks. The first is invisible and harmless;
+the second is the damage §3.7.3 exists to prevent. **So the wider reading wins every edge where
+the runtimes disagree**, and the trailing-space clause of steps 2 and 3 is that reading written
+down.
+
+The accepted cost is stated rather than hidden: a document whose very first line is a thematic
+break written as `--- `, followed by prose and another `---` line, has **everything up to that
+line** skipped — not one paragraph but the whole first section, heading included, since the scan
+takes the first later delimiter line whatever lies between. It is skipped by JS and Python today,
+has been for every release, and nobody has reported it — while a frontmatter block carrying
+trailing whitespace on its fence is what any editor that trims nothing produces.
+
+**What this costs each runtime.** JS and Python already behave this way, so the change there is
+that the extent stops being their parser's opinion and becomes this scan's — which also removes
+the second parse `frontmatterKeys` cost them (polytypo/polytypo#59), since locating the block no
+longer needs one. Go and Ruby change behaviour: both must widen their locator to admit trailing
+U+0020 and U+0009 on either delimiter. Go already owns a hand-written locator for exactly this
+reason and `detectFrontmatter` is where it lives.
+
 #### 3.7.4 Frontmatter by named keys — the one opt-out from §3.7.3
 
 **Spec 1.7.0.** §3.7.3 skips the frontmatter block whole and its reason for doing so still holds.
@@ -556,6 +700,35 @@ already recognises, and the option only changes what happens inside it:
   terminator to the code point that begins the closing delimiter line. A U+000D before that
   terminator belongs to the terminator, exactly as in §3.8.4, so a CRLF document and the same
   bytes with LF give the same content;
+- **a line of that content containing a U+000D not followed by U+000A yields no spans**, exactly
+  as §3.8.4 step 1 already declines a line containing U+0009 and for the same kind of reason. The
+  two line models meet here and do not compose: §3.7.3a step 5 finds the block in a lone-U+000D
+  document, and §3.8.4's LF-only scan then reads that whole block as one line. Measured, the
+  result of letting it through is not merely inert — `title: a "b` and `c" d` on two mapping
+  lines pair their marks across the boundary, an unlisted line inside the listed key's scalar
+  takes `fr`'s spacing, and the U+000D lands **inside a span**, which §3.8.4 forbids in the same
+  breath. Per line rather than per block, because a stray U+000D inside one quoted value is
+  something people produce by accident and it should cost that value rather than the whole block:
+  a lone-U+000D document is one §3.8.4 line and loses everything, a document with one such value
+  loses that line and keeps the rest. **The test runs to the start of the next line, not to the
+  end of this one**, because §3.8.4's own splitter treats a trailing U+000D as a terminator even
+  without a U+000A after it — so a block whose single line ends in one looks clean if the
+  terminator is excluded, and one of the four lone-U+000D fixtures separates the two readings.
+  **The decline drops the spans the content scan produced for that line; it does not alter the
+  content the scan is given, and a span reaching a declined position is dropped whole rather than
+  trimmed.** Three ports reached for the shortcut of substituting the U+000D for another
+  character the scan already declines, and it is not equivalent: substitution moves the character
+  to a different line and can end a value run, so `title` / `slug` / a content-final U+000D
+  converts both keys instead of one, and a stray U+000D on a key whose value run continues onto
+  an indented line converts a key that is not a key. Both shapes are pinned, and both agree with
+  what `yaml` mode already does with the same characters — measured in two shipped runtimes.
+  **Where this rule and `yaml` mode part is on purpose, and it is one shape:** a content line
+  whose terminator is a bare U+000D is clean to `yaml` mode, which strips it, and declined here,
+  because the window includes it. So `title` / `slug` / a content-final U+000D converts `slug` in
+  `yaml` mode and does not here. The wider decline is the direction this section takes everywhere
+  else — a miss is invisible, a U+000D inside a span is not — and the cost is conversions lost in
+  documents written with line endings from the last century. Widening §3.8.4 instead would be a
+  change to `yaml` mode for every caller and wants its own measurement;
 - **both delimiter lines stay outside every span**, as does every line terminator, so no edit
   can reach `---` itself and §3.7.3's setext-underline hazard is unreachable;
 - an **unterminated** block is not a block — §3.7.3 already yields no frontmatter construct
@@ -567,13 +740,16 @@ already recognises, and the option only changes what happens inside it:
   contains one, so specifying a TOML locator would be scope taken on speculation. Recorded as an
   accepted miss in §7.13.
 
-**The option adds spans only where §3.7.3's skip removed them.** If the mode did not recognise a
-frontmatter construct — an unterminated block, a `---` that is not at the start of the document,
-anything a given parser's frontmatter support declines — there is no block, the text is ordinary
-prose in the body's own unit, and the option contributes nothing. That coupling is what makes
-double processing unreachable: no source position can belong to both units. It also means the
-option inherits whatever variance the five parsers already have in recognising the construct, which
-is a pre-existing property of §3.7.3 rather than a new one, and §7.13 records it.
+**The option adds spans only where §3.7.3's skip removed them.** If there is no block — an
+unterminated one, a `---` that is not at the start of the document, an opening line carrying
+anything but whitespace — the text is ordinary prose in the body's own unit and the option
+contributes nothing. That coupling is what makes double processing unreachable: no source position
+can belong to both units — **and since 1.8.0 it is §3.7.3a's mask and its no-span rule that enforce
+it**, not an agreement between two locators. Measured while that mask was still being specified, a
+block whose closer the body's parser did not accept had its content emitted twice, once by each
+unit: `more: b - c` came back as `more: b—cb—c`. **Since 1.8.0 the block's extent is §3.7.3a's
+scan** rather than whatever each parser's frontmatter support decided, so the option no longer
+inherits a variance that was measured in eleven documents out of twenty.
 
 **Key matching is §3.8.2's, which means bare names at any depth.** `title` is processable wherever
 it occurs in the block, `seo.title` included — measured: `seo:` then an indented `title:` is
@@ -1434,18 +1610,29 @@ rule-local.
       behind the option (polytypo/polytypo#13, #26) asked for TOML, and the 187-file corpus of
       §3.7.4.1 contains none. Widening to TOML is additive: a caller passing keys today keeps
       today's behaviour.
-    - **The block itself is recognised by the mode, not by a scan specified here.** §3.7.4's
-      content range is exact once there is a block, but frontmatter is in neither CommonMark nor
-      GFM — every runtime reaches it through its parser's own frontmatter support, and those
-      disagree at the edges: a trailing space on either delimiter is a block in this repository's
-      reference runtime, a `...` closer is not, a `---` after a blank line is not. That variance
-      predates 1.7.0 and already changes output, since a parser that does not recognise the block
-      typesets the metadata as prose; what 1.7.0 adds is a second way for it to show. Specifying
-      the locator belongs with §3.7.3's construct recognition, which governs the skip for every
-      caller, not with an option only some callers pass.
+    - **~~The block itself is recognised by the mode, not by a scan specified here.~~ Closed in
+      1.8.0 by §3.7.3a.** It was here because §3.7.4's content range is exact once there is a
+      block, while the block itself came from each parser's own frontmatter support — and the
+      measurement that followed found those disagreeing two against two on a trailing space,
+      with the two that declined the block typesetting the metadata. The locator is now
+      specified, which is where it belonged: it governs the skip for every caller, not only
+      those who pass the option.
+    - **A lone-U+000D document has a block, and `frontmatterKeys` yields nothing inside it.**
+      §3.7.3a step 5 finds the block by CommonMark's line model and §3.8.4 reads content by its
+      own, so the block reaches the content scan as a single line. An earlier draft let that
+      stand and called it inert; measuring it showed it was not. On two mapping lines a quotation
+      opened on one paired with a mark on the other, an unlisted line inside the listed key's
+      scalar took `fr`'s spacing, and the U+000D landed inside a span — which §3.8.4 forbids in
+      the same breath. §3.7.4 therefore declines any content line carrying such a U+000D — per
+      line, so that a stray one inside a single quoted value costs that value and not the block.
+      The block is still skipped, so nothing machine-read is typeset either way. A lone-U+000D
+      document is one line to §3.8.4 and therefore loses the whole block, which is the price of
+      not widening that section here.
     - **§3.8.6's single-quoted bail costs more here than anywhere it has been measured before.**
-      Of the 247 corpus values a locale would convert, **130 yield no spans when written as a
-      single-quoted scalar**, because an apostrophe inside one is spelled `''` — and an apostrophe
+      Of the 1858 corpus values a locale would convert across eight locales, **1040 yield no spans
+      when written as a single-quoted scalar** — 130 of 247 in `en-GB` alone, the figure 1.7.0
+      shipped with, and `scripts/miss-census.mjs` in this repository is what reproduces either on
+      demand. An apostrophe inside such a scalar is spelled `''`, and an apostrophe
       is exactly what `apostrophe` and `quotes` convert, so the bail falls hardest on the values
       the option exists for. Double-quoted, none bail. The corpus as authored is entirely
       double-quoted, so its own author never meets this; a caller whose YAML style is single

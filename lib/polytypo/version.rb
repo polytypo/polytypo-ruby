@@ -1,5 +1,5 @@
 # frozen_string_literal: true
 
 module Polytypo
-  VERSION = "1.7.0"
+  VERSION = "1.8.0"
 end
