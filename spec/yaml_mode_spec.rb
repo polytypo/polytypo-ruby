@@ -113,6 +113,21 @@ RSpec.describe "yaml mode (spec/rules/modes.md 3.8)" do
     end
   end
 
+  describe "single-quoted escape (3.8.6)" do
+    {
+      "'it''s one...two'" => [["it", "s one...two"], "a: 'it''s one…two'\n"],
+      "'''one...two'''" => [["one...two"], "a: '''one…two'''\n"],
+      "''''" => [[], "a: ''''\n"],
+      "'it''s one...two' # c" => [["it", "s one...two"], "a: 'it''s one…two' # c\n"]
+    }.each do |value, (spans, output)|
+      it "splits #{value} around each doubled apostrophe" do
+        source = "a: #{value}\n"
+        expect(span_text(source)).to eq(spans)
+        expect(yaml(source)).to eq(output)
+      end
+    end
+  end
+
   describe "skip by default (3.8.3)" do
     {
       "a bare sequence item" => "- Some prose here...\n",
@@ -122,7 +137,8 @@ RSpec.describe "yaml mode (spec/rules/modes.md 3.8)" do
       "an alias" => "a: *anchor\n",
       "a tag" => "a: !!str one two...\n",
       "a double-quoted scalar with an escape" => %(a: "one \\"two\\"... three"\n),
-      "a single-quoted scalar with an escaped quote" => "a: 'it''s one two...'\n",
+      "an unterminated single-quoted scalar with an escaped quote" => "a: 'it''s one...two\n",
+      "text after the closing quote of a single-quoted scalar" => "a: 'it''s one...two' x\n",
       "a tab anywhere on the line" => "a:\tone two...\n",
       "a compact nested sequence" => "a: - one two...\n",
       "a compact nested mapping" => "a: one two .:\n",

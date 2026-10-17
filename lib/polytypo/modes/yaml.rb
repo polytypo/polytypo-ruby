@@ -246,21 +246,30 @@ module Polytypo
       end
       private_class_method :block_scalar
 
-      # 3.8.6. The span is the content between the quotes. Both bails exist so that source
-      # characters and content characters are the same thing, which the offset model of 3.1
-      # requires -- the same constraint that makes an HTML character reference an opaque unit in
-      # 3.6. No colon test applies here: quoting neutralises the colon, and applying the
-      # plain-scalar test would decline `title: "Chapter 1: the beginning"`.
+      # 3.8.6. The span is the content between the quotes. A backslash in a double-quoted scalar
+      # bails, so that source characters and content characters are the same thing, which the
+      # offset model of 3.1 requires. In a single-quoted scalar each doubled apostrophe is an
+      # opaque two-code-point unit that lies outside every span, the same treatment an HTML
+      # character reference gets in 3.6; the scalar's range is split around it. No colon test
+      # applies here: quoting neutralises the colon, and applying the plain-scalar test would
+      # decline `title: "Chapter 1: the beginning"`.
       def self.quoted_scalar(chars, line, v, spans)
         quote = chars[v]
+        starts = []
         close = -1
+        segment = v + 1
         j = v + 1
         while j < line.end
           c = chars[j]
           return if quote == '"' && c == "\\"
-          return if quote == "'" && c == "'" && j + 1 < line.end && chars[j + 1] == "'"
 
           if c == quote
+            if quote == "'" && j + 1 < line.end && chars[j + 1] == "'"
+              starts << [segment, j] if j > segment
+              segment = j + 2
+              j += 2
+              next
+            end
             close = j
             break
           end
@@ -272,7 +281,8 @@ module Polytypo
         after += 1 while after < line.end && chars[after] == SPACE
         return if after < line.end && chars[after] != "#"
 
-        spans << Spans::Span.new(v + 1, close) if close > v + 1
+        starts << [segment, close] if close > segment
+        starts.each { |from, to| spans << Spans::Span.new(from, to) }
       end
       private_class_method :quoted_scalar
 

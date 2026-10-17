@@ -104,9 +104,9 @@ Polytypo.transform(
 ```
 
 Without `frontmatter_keys:` nothing in the block changes, and a key you do not name never does. The
-block is read with the same scan `yaml` mode uses, so it refuses the same constructs — a
-single-quoted scalar containing `''` among them, which is how an apostrophe is written inside single
-quotes, so `title: 'It''s a test'` comes back untouched. The block is also processed separately from
+block is read with the same scan `yaml` mode uses, so it refuses the same constructs, and
+reads a doubled apostrophe in a single-quoted scalar as an opaque unit: in `title: 'It''s a test'`
+the `''` is left alone and the text on either side is processed. The block is also processed separately from
 the body, which shows up in exactly one place: an unbalanced quotation mark in `title` cannot pair
 with a mark in your first paragraph.
 
