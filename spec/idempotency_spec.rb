@@ -103,7 +103,7 @@ RSpec.describe "idempotency" do
   # even though each unit is. The alphabet is the yaml one, since the scan inside the block is
   # 3.8's.
   it "is idempotent over a bounded sweep of markdown documents with a processed frontmatter block" do
-    alphabet = ['"', "'", "-", ":", "#", " ", ".", "a", "---"]
+    alphabet = ['"', "'", "-", ":", "#", " ", ".", "a", "---", "\r"]
     templates = {
       "plain scalar and body" => ->(a, b) { "---\nk: #{a}\n---\n\n#{b}\n" },
       "two scalars" => ->(a, b) { "---\nk: #{a}\nj: #{b}\n---\n\nbody\n" },

@@ -202,6 +202,42 @@ RSpec.describe "yaml mode (spec/rules/modes.md 3.8)" do
       expect(yaml(%(a: |\n  He said "hi"\n  and left\n))).to eq("a: |\n  He said “hi”\n  and left\n")
     end
 
+    it "declines a line with a lone carriage return (modes.md 3.8.4 step 9)" do
+      expect(yaml("title: a\rb -- c\n", "en-US", %w[title])).to eq("title: a\rb -- c\n")
+      expect(yaml("title: a -- b\r\r\n", "en-US", %w[title])).to eq("title: a -- b\r\r\n")
+      expect(yaml("title: a -- b\r\r", "en-US", %w[title])).to eq("title: a -- b\r\r")
+    end
+
+    it "treats a carriage return ending the input as a terminator" do
+      expect(yaml("title: a -- b\r", "en-US", %w[title])).to eq("title: a\u2014b\r")
+    end
+
+    it "still converts a CRLF document" do
+      expect(yaml("title: a -- b\r\nsummary: c -- d\r\n", "en-US", %w[title summary]))
+        .to eq("title: a\u2014b\r\nsummary: c\u2014d\r\n")
+    end
+
+    it "consumes the value run of a declined line" do
+      source = "summary: a\rb\n  title: c -- d\n"
+      expect(yaml(source, "en-US", %w[title summary])).to eq(source)
+    end
+
+    it "declines a whole block scalar when any line carries a lone carriage return" do
+      source = "title: |\n  a -- b\n  c\rd -- e\n"
+      expect(yaml(source, "en-US", %w[title])).to eq(source)
+    end
+
+    it "does not take a line starting with a carriage return for blank" do
+      expect(yaml("title: |\n  a -- b\n\r  \n  c -- d\n", "en-US", %w[title]))
+        .to eq("title: |\n  a\u2014b\n\r  \n  c -- d\n")
+    end
+
+    it "never puts a line terminator inside a span" do
+      ["title: a\rb -- c\n", "title: |\n  a\rb\n  c\n", "title: a -- b\r\r\n", "title: 'a\rb'\n"].each do |src|
+        expect(span_text(src, %w[title]).join).not_to match(/[\r\n]/)
+      end
+    end
+
     it "gives CRLF the same spans as LF and keeps its carriage returns" do
       expect(span_text("a: |\r\n  one two...\r\n")).to eq(["one two..."])
       expect(yaml("a: |\r\n  one two...\r\n")).to eq("a: |\r\n  one two…\r\n")

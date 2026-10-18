@@ -75,6 +75,13 @@ module Polytypo
       end
       private_class_method :tab?
 
+      # A U+000D the line definition did not take for a terminator, i.e. one that is not part of
+      # a CRLF and does not end the input. It would otherwise land inside a span.
+      def self.lone_cr?(chars, line)
+        (line.start...line.end).any? { |i| chars[i] == CR }
+      end
+      private_class_method :lone_cr?
+
       # 3.8.4 step 3. "---" and "..." at the head of a line, bare or introducing a node: the
       # trailing-content form is declined too, so "--- key: value" never yields a key of
       # "--- key".
@@ -176,7 +183,10 @@ module Polytypo
         # costs nothing to decline: this is what makes "run:", "if:" and "image:" unreachable.
         return nxt unless keys.include?(chars[key_start...key_end].join)
 
-        # step 9 -- the scalar form.
+        # step 9 -- a lone U+000D declines the line, and its value run is still consumed.
+        return nxt if lone_cr?(chars, line)
+
+        # step 10 -- the scalar form.
         value = chars[v]
         return nxt if NON_SCALAR_VALUE_CHARS.include?(value)
 
@@ -217,17 +227,18 @@ module Polytypo
         h += 1 while h < line.end && chars[h] == SPACE
         return if h < line.end && chars[h] != "#"
 
-        # One definition of the run, and three conditions that make the whole block yield no
+        # One definition of the run, and four conditions that make the whole block yield no
         # spans.
         content = []
         content_indent = -1
         run_lines.each do |nxt|
           next if blank?(chars, nxt) # blank lines belong to the block and yield no span
 
-          # A tab makes indentation undecidable; an explicit indicator that disagrees with the
-          # block as written, or a later line dedented inside it, is ambiguous rather than
-          # guessable. All three make the WHOLE block yield no spans -- bail rather than choose.
-          break content_indent = -1 if tab?(chars, nxt)
+          # A tab makes indentation undecidable, and a lone U+000D would land inside a span; an
+          # explicit indicator that disagrees with the block as written, or a later line dedented
+          # inside it, is ambiguous rather than guessable. All of them make the WHOLE block yield
+          # no spans -- bail rather than choose.
+          break content_indent = -1 if tab?(chars, nxt) || lone_cr?(chars, nxt)
 
           next_indent = first_non_space(chars, nxt) - nxt.start
           if content_indent.negative?
