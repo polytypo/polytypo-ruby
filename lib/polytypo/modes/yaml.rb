@@ -167,12 +167,10 @@ module Polytypo
         j = q + 1
         while j < line.end
           c = chars[j]
-          if quote == '"' && c == "\\"
+          if (quote == '"' && c == "\\") || (quote == "'" && c == quote && j + 1 < line.end && chars[j + 1] == "'")
             j += 2
           elsif c != quote
             j += 1
-          elsif quote == "'" && j + 1 < line.end && chars[j + 1] == "'"
-            j += 2
           else
             return j
           end
