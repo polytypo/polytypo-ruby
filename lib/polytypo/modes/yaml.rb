@@ -34,8 +34,31 @@ module Polytypo
         spans = []
         li = 0
         li = scan_line(chars, lines, li, keys, spans) while li < lines.length
-        spans
+        drop_carriage_return_regions(chars, lines, spans)
       end
+
+      # 3.8.4's carriage-return region: a line containing a U+000D yields no spans, and neither does
+      # any later line up to the first one that is non-empty, does not begin with U+0020 and
+      # contains none. It removes spans and never adds one.
+      def self.drop_carriage_return_regions(chars, lines, spans)
+        in_region = false
+        declined = lines.map do |line|
+          if lone_cr?(chars, line)
+            in_region = true
+          elsif line.end > line.start && chars[line.start] != " "
+            in_region = false
+          end
+          in_region
+        end
+        return spans unless declined.any?
+
+        li = 0
+        spans.reject do |span|
+          li += 1 while li + 1 < lines.length && span.start >= lines[li + 1].start
+          declined[li]
+        end
+      end
+      private_class_method :drop_carriage_return_regions
 
       # 3.8.4: a line ends at U+000A, and A U+000D IMMEDIATELY BEFORE IT IS NOT PART OF THE LINE
       # -- it is a terminator like the U+000A itself, so it lies outside every span and comes back
@@ -69,6 +92,12 @@ module Polytypo
         first_non_space(chars, line) == line.end
       end
       private_class_method :blank?
+
+      # 3.8.4 step 7: a line of the value run that is not blank. Blank lines alone are not one.
+      def self.continuation?(chars, lines, li, run_end)
+        ((li + 1)...run_end).any? { |k| !blank?(chars, lines[k]) }
+      end
+      private_class_method :continuation?
 
       def self.tab?(chars, line)
         (line.start...line.end).any? { |i| chars[i] == TAB }
@@ -129,72 +158,183 @@ module Polytypo
       end
       private_class_method :value_run_end
 
+      # 3.8.4 step 5: the index of the quote that closes the one at q, or -1. In a double-quoted
+      # scalar a U+005C and the code point after it never close the quote, which decodes nothing:
+      # no YAML escape ends in anything that would be a closing quote. A quote not closed on the
+      # line returns -1.
+      def self.closing_quote(chars, line, q)
+        quote = chars[q]
+        j = q + 1
+        while j < line.end
+          c = chars[j]
+          if quote == '"' && c == "\\"
+            j += 2
+          elsif c != quote
+            j += 1
+          elsif quote == "'" && j + 1 < line.end && chars[j + 1] == "'"
+            j += 2
+          else
+            return j
+          end
+        end
+        -1
+      end
+      private_class_method :closing_quote
+
+      # 3.8.4 step 3: the next line that begins in column 0 with a document marker.
+      def self.document_run_end(chars, lines, li)
+        k = li + 1
+        k += 1 while k < lines.length && !document_marker?(chars, lines[k].start, lines[k].end)
+        k
+      end
+      private_class_method :document_run_end
+
+      # 3.8.4 step 5's own-line node: everything up to the first later line that is non-empty and
+      # does not begin with U+0020, because the scan does not track the key above.
+      def self.own_line_run_end(chars, lines, li, indent)
+        return document_run_end(chars, lines, li) if indent.zero?
+
+        k = li + 1
+        while k < lines.length
+          nxt = lines[k]
+          break if nxt.end > nxt.start && chars[nxt.start] != SPACE
+
+          k += 1
+        end
+        k
+      end
+      private_class_method :own_line_run_end
+
+      # 3.8.4 step 4: "-", "?" or ":" followed by U+0020 or the line end.
+      def self.node_marker?(chars, j, to)
+        return false unless ["-", "?", ":"].include?(chars[j])
+
+        j + 1 == to || chars[j + 1] == SPACE
+      end
+      private_class_method :node_marker?
+
+      # 3.8.4 step 5. Returns [colon, key_end, declined, open_quote]; colon is -1 for a line with
+      # no key, which is a node line.
+      def self.locate_key(chars, line, i)
+        first = chars[i]
+        if ['"', "'"].include?(first)
+          close = closing_quote(chars, line, i)
+          return [-1, -1, false, true] if close.negative?
+
+          p = close + 1
+          p += 1 while p < line.end && chars[p] == SPACE
+          return [p, close + 1, true, false] if p < line.end && indicator_colon?(chars, p, line.end)
+
+          return [-1, -1, false, false]
+        end
+        return [-1, -1, false, false] if ["{", "[", "&", "*", "!"].include?(first)
+
+        declined = false
+        (i...line.end).each do |j|
+          c = chars[j]
+          break if c == "#" && chars[j - 1] == SPACE
+
+          if indicator_colon?(chars, j, line.end)
+            key_end = j
+            key_end -= 1 while key_end > i && chars[key_end - 1] == SPACE
+            return [j, key_end, declined, false]
+          end
+          declined = true if DECLINING_KEY_CHARS.include?(c)
+        end
+        [-1, -1, false, false]
+      end
+      private_class_method :locate_key
+
+      # 3.8.4 step 7: whether a declined key's value can continue on the next line.
+      def self.declined_value_open?(chars, line, v)
+        value = chars[v]
+        return true if ["|", ">", "{", "[", "&", "!"].include?(value)
+        return false unless ['"', "'"].include?(value)
+
+        close = closing_quote(chars, line, v)
+        return true if close.negative?
+
+        p = close + 1
+        p += 1 while p < line.end && chars[p] == SPACE
+        p < line.end && chars[p] != "#"
+      end
+      private_class_method :declined_value_open?
+
       # One step of 3.8.4. Returns the index of the next line to scan.
       def self.scan_line(chars, lines, li, keys, spans)
         line = lines[li]
         skip_line = li + 1
 
-        # step 1 -- blank, or a tab anywhere, which makes indentation undecidable.
+        # step 1 -- blank. A tab makes indentation undecidable, so the line and whatever it
+        # absorbs yield no spans, but steps 2 to 7 still decide what it absorbs.
         start = first_non_space(chars, line)
-        return skip_line if start == line.end || tab?(chars, line)
+        return skip_line if start == line.end
 
+        quiet = tab?(chars, line)
         indent = start - line.start
 
-        # steps 2 and 3 -- comment, directive, document marker.
+        # steps 2 and 3 -- comment, directive, document marker. A marker with a node after it
+        # absorbs the document.
         return skip_line if ["#", "%"].include?(chars[start])
-        return skip_line if document_marker?(chars, start, line.end)
 
-        # step 4 -- block sequence entries are consumed, not skipped; "- - key: v" nests.
+        if document_marker?(chars, start, line.end)
+          p = start + 3
+          p += 1 while p < line.end && chars[p] == SPACE
+          return skip_line if p >= line.end || chars[p] == "#"
+
+          return indent.zero? ? document_run_end(chars, lines, li) : skip_line
+        end
+
+        # step 4 -- node markers are consumed, not skipped; "- - key: v" nests.
         i = start
-        while i < line.end && sequence_dash?(chars, i, line.end)
+        while i < line.end && node_marker?(chars, i, line.end)
           i += 2
           i += 1 while i < line.end && chars[i] == SPACE
         end
-        return skip_line if i >= line.end
+        return skip_line if i >= line.end || chars[i] == "#"
 
         # step 5 -- find the key. A colon NOT followed by U+0020 or the line end is an ordinary
         # key character, so "a:b: v" has the key "a:b"; stating that is what keeps five scanners
         # agreeing.
-        key_start = i
-        colon = -1
-        (i...line.end).each do |j|
-          return skip_line if DECLINING_KEY_CHARS.include?(chars[j])
+        colon, key_end, declined, open_quote = locate_key(chars, line, i)
 
-          if indicator_colon?(chars, j, line.end)
-            colon = j
-            break
-          end
+        # No key: the line is a node of its own, and it absorbs its value run. One that opens a
+        # flow collection, a block scalar or a quote and sits on a line of its own absorbs the
+        # region.
+        if colon.negative?
+          own_line = i == start && (open_quote || ["{", "[", "|", ">"].include?(chars[i]))
+          return own_line_run_end(chars, lines, li, indent) if own_line
+
+          return value_run_end(chars, lines, li, indent)
         end
-        return skip_line if colon.negative?
-
-        key_end = colon
-        key_end -= 1 while key_end > key_start && chars[key_end - 1] == SPACE
-        return skip_line if key_end <= key_start
 
         # step 6 -- an empty value means a nested node, whose lines ARE scanned on their own.
         v = colon + 1
         v += 1 while v < line.end && chars[v] == SPACE
         return skip_line if v >= line.end
 
-        # step 7 -- the line carries an inline value, so its continuation lines belong to it.
+        # step 7 -- the line carries an inline value, so its continuation lines belong to it. A
+        # declined key's value absorbs them only if it can continue on the next line.
+        if declined
+          return declined_value_open?(chars, line, v) ? value_run_end(chars, lines, li, indent) : skip_line
+        end
+
         nxt = value_run_end(chars, lines, li, indent)
 
         # step 8 -- the key must be listed. Checked before the value's form, so an unlisted key
         # costs nothing to decline: this is what makes "run:", "if:" and "image:" unreachable.
-        return nxt unless keys.include?(chars[key_start...key_end].join)
+        return nxt unless keys.include?(chars[i...key_end].join)
+        return nxt if quiet
 
-        # step 9 -- a lone U+000D declines the line, and its value run is still consumed.
-        return nxt if lone_cr?(chars, line)
-
-        # step 10 -- the scalar form.
+        # step 9 -- the scalar form.
         value = chars[v]
         return nxt if NON_SCALAR_VALUE_CHARS.include?(value)
 
         if ["|", ">"].include?(value)
           block_scalar(chars, line, lines[(li + 1)...nxt], indent, v, spans)
         elsif ['"', "'"].include?(value)
-          quoted_scalar(chars, line, v, spans) if nxt == li + 1
-        elsif nxt == li + 1
+          quoted_scalar(chars, line, v, spans) unless continuation?(chars, lines, li, nxt)
+        elsif !continuation?(chars, lines, li, nxt)
           plain_scalar(chars, line, v, spans)
         end
         nxt
