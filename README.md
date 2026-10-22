@@ -110,6 +110,26 @@ the `''` is left alone and the text on either side is processed. The block is al
 the body, which shows up in exactly one place: an unbalanced quotation mark in `title` cannot pair
 with a mark in your first paragraph.
 
+### Protecting regions of a text
+
+In `text` mode, `protect:` names ranges of the input that are never edited and that the rules read
+as opaque content, which is what a template hole is: `${…}` in a JavaScript template literal, an
+ICU argument, a `{{ … }}` tag. Ranges are `[start, end]` pairs of code-point offsets (not bytes and
+not UTF-16 units), half-open, ascending and non-overlapping; touching ranges are one run.
+
+```ruby
+Polytypo.transform("${x} - Rules", locale: "en-US", protect: [[0, 4]])
+# => "${x}—Rules"
+Polytypo.transform("${x} - Rules", locale: "en-GB", protect: [[0, 4]])
+# => "${x} – Rules"
+```
+
+The protected code points come back exactly as written. Edits before a range shift it, so a second
+call over the output needs the ranges at their new offsets; `transform` does not return them.
+`nil` and `[]` mean no protection. A malformed range, or a non-empty list in `html`, `markdown` or
+`yaml` mode, raises `Polytypo::Error` with `POLYTYPO_INVALID_OPTION`. `Polytypo.analyze` takes the
+same option and reports offsets into the input as passed.
+
 `require "polytypo"` never loads the native `commonmarker` extension unless you actually call
 `Polytypo.transform` with `mode: "markdown"` — the require happens lazily, inside the markdown
 pipeline only. A single `Polytypo.transform` module method (not separate

@@ -25,8 +25,6 @@ module Polytypo
         end
         current
       end
-      private_class_method :run_rules_over_spans
-
       # The output is the input with a set of disjoint substring replacements applied and nothing
       # else (modes.md 4). A span whose content the rules did not change contributes no
       # replacement, so a document needing no changes comes back byte-identical.

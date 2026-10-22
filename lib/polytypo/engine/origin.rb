@@ -54,6 +54,18 @@ module Polytypo
         out
       end
 
+      # Where a change ends in the input (analyze.md section 2). A non-empty edit ends one past
+      # the input offset of the last code point it replaced that has an origin. Scanning forward
+      # from edit.end instead, as origin_at does for a start, would carry the end across a skipped
+      # element or a protected run that follows -- the boundary marker has no origin -- and the
+      # reported range would contain text the rules never saw.
+      def self.end_of(origin, edit, input_length)
+        (edit.end - 1).downto(edit.start) do |i|
+          return origin[i] + 1 unless origin[i] == NO_ORIGIN
+        end
+        origin_at(origin, edit.end, input_length)
+      end
+
       # One rule's edits, in the coordinates that rule saw, rendered as Changes in input
       # coordinates. +before+ is the text this rule replaced and +after+ what it replaced it with
       # (analyze.md section 2), so on a text two rules have both touched, +before+ is what the
@@ -64,7 +76,7 @@ module Polytypo
           Polytypo::Change.new(
             rule_id: rule_id,
             start: origin_at(origin, edit.start, input_length),
-            end: origin_at(origin, edit.end, input_length),
+            end: end_of(origin, edit, input_length),
             before: Codepoints.from_codepoints(cp[edit.start...edit.end]),
             after: Codepoints.from_codepoints(edit.replacement)
           )

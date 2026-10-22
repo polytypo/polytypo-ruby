@@ -5,6 +5,7 @@ require_relative "polytypo/errors"
 require_relative "polytypo/engine/codepoints"
 require_relative "polytypo/engine/origin"
 require_relative "polytypo/engine/pipeline"
+require_relative "polytypo/engine/protect"
 require_relative "polytypo/engine/rules" # side effect: registers all 9 rules
 require_relative "polytypo/modes/spans"
 require_relative "polytypo/modes/runner"
@@ -24,7 +25,9 @@ module Polytypo
   # "mdx" is not implemented by this runtime). +keys+ is required iff mode is "yaml" and names
   # the mapping keys whose scalar values are prose (modes.md 3.8.2) -- it has no default, because
   # nothing in YAML's syntax separates "description:" from "run:". +rules+ is an opt-out Hash
-  # keyed by rule id.
+  # keyed by rule id. +protect+ is "text" mode only: an Array of [start, end] pairs of
+  # code-point offsets (half-open, ascending, non-overlapping) into +input+ that are never edited
+  # and that the rules read as opaque content (modes.md 3.9). nil and [] are the same call.
   #
   # Pure: no I/O, no environment, no clock, no globals, no class-level mutable state --
   # thread-safe and reentrant, callable concurrently from any number of Threads with no external
@@ -33,7 +36,7 @@ module Polytypo
   # Only `mode: "text"`/`"html"` ever touch this file's own requires; `mode: "markdown"` lazily
   # requires "commonmarker" from within Modes::Markdown, never at load time of this file.
   def self.transform(input, locale:, mode: "text", dialect: nil, keys: nil, rules: nil, narrow_nbsp: nil,
-                     frontmatter_keys: nil)
+                     frontmatter_keys: nil, protect: nil)
     resolved_mode = resolve_mode(mode)
     narrow_target = Engine.resolve_narrow_target(narrow_nbsp)
 
@@ -42,19 +45,19 @@ module Polytypo
       if dialect
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
-      transform_text(input, locale, rules, narrow_target)
+      transform_text(input, locale, rules, narrow_target, protect)
     when "html"
       if dialect
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
-      transform_html(input, locale, rules, narrow_target)
+      transform_html(input, locale, rules, narrow_target, protect)
     when "yaml"
       if dialect
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
-      transform_yaml(input, locale, keys, rules, narrow_target)
+      transform_yaml(input, locale, keys, rules, narrow_target, protect)
     else # "markdown"
-      transform_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys)
+      transform_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys, protect)
     end
   end
 
@@ -71,7 +74,7 @@ module Polytypo
   #
   # Pure and thread-safe on the same terms as .transform.
   def self.analyze(input, locale:, mode: "text", dialect: nil, keys: nil, rules: nil, narrow_nbsp: nil,
-                   frontmatter_keys: nil)
+                   frontmatter_keys: nil, protect: nil)
     resolved_mode = resolve_mode(mode)
     narrow_target = Engine.resolve_narrow_target(narrow_nbsp)
 
@@ -80,19 +83,19 @@ module Polytypo
       if dialect
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
-      analyze_text(input, locale, rules, narrow_target)
+      analyze_text(input, locale, rules, narrow_target, protect)
     when "html"
       if dialect
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
-      analyze_html(input, locale, rules, narrow_target)
+      analyze_html(input, locale, rules, narrow_target, protect)
     when "yaml"
       if dialect
         raise Error.new(CODE_INVALID_DIALECT, '"dialect" is only valid when mode is "markdown"')
       end
-      analyze_yaml(input, locale, keys, rules, narrow_target)
+      analyze_yaml(input, locale, keys, rules, narrow_target, protect)
     else # "markdown"
-      analyze_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys)
+      analyze_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys, protect)
     end
   end
 
@@ -109,18 +112,22 @@ module Polytypo
   end
   private_class_method :resolve_mode
 
-  def self.transform_text(input, locale, rules, narrow_target)
+  def self.transform_text(input, locale, rules, narrow_target, protect)
     _resolved, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     cp = Engine::Codepoints.to_codepoints(input)
+    holes = Engine::Protect.resolve(protect, cp.length)
     ctx = Engine::RuleContext.new(mode: "text", dialect: nil, locale: locale,
                                   narrow_target: narrow_target)
+    return Engine::Protect.run(cp, holes, plan, locale_data, ctx) unless holes.empty?
+
     result = Engine::Pipeline.run_rules(cp, plan, locale_data, ctx)
     Engine::Codepoints.from_codepoints(result)
   end
   private_class_method :transform_text
 
-  def self.transform_html(input, locale, rules, narrow_target)
+  def self.transform_html(input, locale, rules, narrow_target, protect)
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
+    Engine::Protect.refuse_outside_text(protect, "html")
     spans = Modes::Html.html_spans(input)
     ctx = Engine::RuleContext.new(mode: "html", dialect: nil, locale: resolved_locale,
                                   narrow_target: narrow_target)
@@ -134,9 +141,10 @@ module Polytypo
   # counterpart: with no declared grammar to violate, a file that is not YAML yields few spans or
   # none and comes back byte for byte (modes.md 3.8.3). The only raise this mode adds is +keys+,
   # which is about the call and not the input.
-  def self.transform_yaml(input, locale, keys, rules, narrow_target)
+  def self.transform_yaml(input, locale, keys, rules, narrow_target, protect)
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     resolved_keys = Engine.resolve_yaml_keys(keys)
+    Engine::Protect.refuse_outside_text(protect, "yaml")
     spans = Modes::Yaml.yaml_spans(input, resolved_keys)
     ctx = Engine::RuleContext.new(mode: "yaml", dialect: nil, locale: resolved_locale,
                                   narrow_target: narrow_target)
@@ -145,7 +153,7 @@ module Polytypo
   end
   private_class_method :transform_yaml
 
-  def self.transform_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys = nil)
+  def self.transform_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys = nil, protect = nil)
     # Validation order is public, tested behaviour, identical across every runtime: rules (an
     # unknown rule id), then locale (an unknown locale), then dialect, then frontmatter_keys, then
     # parsing (modes.md 3.7.4).
@@ -153,6 +161,7 @@ module Polytypo
     require_relative "polytypo/modes/markdown"
     Modes::Markdown.resolve_dialect(dialect)
     resolved_keys = Engine.resolve_frontmatter_keys(frontmatter_keys)
+    Engine::Protect.refuse_outside_text(protect, "markdown")
     ctx = Engine::RuleContext.new(mode: "markdown", dialect: dialect, locale: resolved_locale,
                                   narrow_target: narrow_target)
     cp = Engine::Codepoints.to_codepoints(input)
@@ -171,17 +180,21 @@ module Polytypo
   private_class_method :markdown_units
   private_class_method :transform_markdown
 
-  def self.analyze_text(input, locale, rules, narrow_target)
+  def self.analyze_text(input, locale, rules, narrow_target, protect)
     _resolved, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     cp = Engine::Codepoints.to_codepoints(input)
+    holes = Engine::Protect.resolve(protect, cp.length)
     ctx = Engine::RuleContext.new(mode: "text", dialect: nil, locale: locale,
                                   narrow_target: narrow_target)
+    return Engine::Protect.analyze(cp, holes, plan, locale_data, ctx) unless holes.empty?
+
     Engine::Pipeline.run_rules_recording(cp, plan, locale_data, ctx, (0...cp.length).to_a, cp.length)
   end
   private_class_method :analyze_text
 
-  def self.analyze_html(input, locale, rules, narrow_target)
+  def self.analyze_html(input, locale, rules, narrow_target, protect)
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
+    Engine::Protect.refuse_outside_text(protect, "html")
     spans = Modes::Html.html_spans(input)
     ctx = Engine::RuleContext.new(mode: "html", dialect: nil, locale: resolved_locale,
                                   narrow_target: narrow_target)
@@ -191,9 +204,10 @@ module Polytypo
 
   # analyze.md section 1, "yaml" mode: offsets are into the document, not into a span
   # (analyze.md section 6).
-  def self.analyze_yaml(input, locale, keys, rules, narrow_target)
+  def self.analyze_yaml(input, locale, keys, rules, narrow_target, protect)
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     resolved_keys = Engine.resolve_yaml_keys(keys)
+    Engine::Protect.refuse_outside_text(protect, "yaml")
     spans = Modes::Yaml.yaml_spans(input, resolved_keys)
     ctx = Engine::RuleContext.new(mode: "yaml", dialect: nil, locale: resolved_locale,
                                   narrow_target: narrow_target)
@@ -201,13 +215,14 @@ module Polytypo
   end
   private_class_method :analyze_yaml
 
-  def self.analyze_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys = nil)
+  def self.analyze_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys = nil, protect = nil)
     # Validation order is public, tested behaviour and is shared with .transform: rules, then
     # locale, then dialect, then frontmatter_keys, then parsing (analyze.md section 4, A1).
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
     require_relative "polytypo/modes/markdown"
     Modes::Markdown.resolve_dialect(dialect)
     resolved_keys = Engine.resolve_frontmatter_keys(frontmatter_keys)
+    Engine::Protect.refuse_outside_text(protect, "markdown")
     ctx = Engine::RuleContext.new(mode: "markdown", dialect: dialect, locale: resolved_locale,
                                   narrow_target: narrow_target)
     Modes::Runner.analyze_over_units(Engine::Codepoints.to_codepoints(input),

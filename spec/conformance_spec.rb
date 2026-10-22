@@ -8,6 +8,14 @@ require "json"
 # non-throwing case is also an idempotency case. Nothing here knows about individual locales or
 # rules: fixtures are discovered at spec-run time, mirroring the other three ports' own runners.
 RSpec.describe "conformance fixtures" do
+  # The fixtures write a range as { "start", "end" }; this runtime takes [start, end]. Anything
+  # that is not a mapping (the "not a list" refusal) goes through unconverted.
+  def protect_ranges(value)
+    return value unless value.is_a?(Array)
+
+    value.map { |range| range.is_a?(Hash) ? [range["start"], range["end"]] : range }
+  end
+
   fixtures_dir = File.expand_path("../lib/polytypo/data/fixtures", __dir__)
   fixture_files = Dir.glob(File.join(fixtures_dir, "*.json")).reject { |f| f.end_with?("locale-resolution.json") }
   raise "no fixture files found" if fixture_files.empty?
@@ -30,6 +38,7 @@ RSpec.describe "conformance fixtures" do
         opts[:narrow_nbsp] = c["narrowNbsp"] if c["narrowNbsp"]
         opts[:keys] = c["keys"] if c["keys"]
         opts[:frontmatter_keys] = c["frontmatterKeys"] if c["frontmatterKeys"]
+        opts[:protect] = protect_ranges(c["protect"]) if c.key?("protect")
 
         if c["throws"]
           expect { Polytypo.transform(c["in"], **opts) }
@@ -46,6 +55,9 @@ RSpec.describe "conformance fixtures" do
         # the case's OWN options: a case with narrowNbsp or keys is a fixed point under those and
         # not under the defaults, so spreading **opts here is contract, not convenience -- and for
         # keys the re-run would not even run without it, since the option has no default.
+        # A case with `protect` is a fixed point under `protectOut` (modes.md 3.9.5): the ranges
+        # move with the edits, so the first call's ranges are not the same call on the output.
+        opts[:protect] = protect_ranges(c["protectOut"]) if c.key?("protect")
         twice = Polytypo.transform(expected, **opts)
         expect(escape_non_ascii(twice)).to eq(escape_non_ascii(expected)),
                                             "not idempotent: transform(out) = #{escape_non_ascii(twice)}"
