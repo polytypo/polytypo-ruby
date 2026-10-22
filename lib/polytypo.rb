@@ -57,7 +57,7 @@ module Polytypo
       end
       transform_yaml(input, locale, keys, rules, narrow_target, protect)
     else # "markdown"
-      transform_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys, protect)
+      transform_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys: frontmatter_keys, protect: protect)
     end
   end
 
@@ -95,7 +95,7 @@ module Polytypo
       end
       analyze_yaml(input, locale, keys, rules, narrow_target, protect)
     else # "markdown"
-      analyze_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys, protect)
+      analyze_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys: frontmatter_keys, protect: protect)
     end
   end
 
@@ -153,7 +153,7 @@ module Polytypo
   end
   private_class_method :transform_yaml
 
-  def self.transform_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys = nil, protect = nil)
+  def self.transform_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys: nil, protect: nil)
     # Validation order is public, tested behaviour, identical across every runtime: rules (an
     # unknown rule id), then locale (an unknown locale), then dialect, then frontmatter_keys, then
     # parsing (modes.md 3.7.4).
@@ -215,7 +215,7 @@ module Polytypo
   end
   private_class_method :analyze_yaml
 
-  def self.analyze_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys = nil, protect = nil)
+  def self.analyze_markdown(input, locale, dialect, rules, narrow_target, frontmatter_keys: nil, protect: nil)
     # Validation order is public, tested behaviour and is shared with .transform: rules, then
     # locale, then dialect, then frontmatter_keys, then parsing (analyze.md section 4, A1).
     resolved_locale, locale_data, plan = Engine::Pipeline.prepare(locale, rules)
