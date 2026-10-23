@@ -155,7 +155,7 @@ no-break one back), so replaying the list is not guaranteed to reproduce the out
 
 ### Errors
 
-Every error `Polytypo.transform` raises is a `Polytypo::Error` carrying one of seven stable
+Every error `Polytypo.transform` raises is a `Polytypo::Error` carrying one of eight stable
 codes — check `#code`, not the message text, which is English and informative but not part of
 the contract:
 

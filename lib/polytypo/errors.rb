@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Polytypo
-  # The seven stable, cross-runtime error codes (docs/ARCHITECTURE.md section 4.6). Messages are
+  # The eight stable, cross-runtime error codes (docs/ARCHITECTURE.md section 4.6). Messages are
   # English and are not part of the contract; codes are.
   CODE_UNKNOWN_LOCALE = "POLYTYPO_UNKNOWN_LOCALE"
   CODE_INVALID_MODE = "POLYTYPO_INVALID_MODE"
