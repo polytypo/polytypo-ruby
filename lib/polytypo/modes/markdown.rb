@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "set"
 require_relative "spans"
 require_relative "html"
 require_relative "yaml"
