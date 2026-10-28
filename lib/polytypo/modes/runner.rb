@@ -13,12 +13,16 @@ module Polytypo
     module Runner
       # The same sequence as Engine::Pipeline.run_rules, with the two boundary filters of
       # modes.md 3.4 interposed.
-      def self.run_rules_over_spans(cp, plan, locale_data, ctx)
+      def self.run_rules_over_spans(cp, plan, locale_data, ctx, guarded = [])
         current = cp
+        markdown = ctx.mode == "markdown"
         plan.each do |rule_id|
           fn = Engine::Registry.rule(rule_id)
           edits = fn.call(current, locale_data, ctx)
-          filtered = Spans.filter_boundary_edits(current, edits, Spans.span_ranges_of(current))
+          filtered = Spans.filter_boundary_edits(
+            current, edits, Spans.span_ranges_of(current),
+            delimiter_neighbours: markdown, guarded: guarded
+          )
           next if filtered.empty?
 
           current = Engine::Edits.apply_edits(current, filtered, rule_id)
@@ -61,7 +65,8 @@ module Polytypo
         return [] if normalized.empty?
 
         concatenated = Spans.concatenate_spans(source_cp, normalized)
-        transformed = run_rules_over_spans(concatenated, plan, locale_data, ctx)
+        guarded = normalized.map { |s| s.url_tail == true }
+        transformed = run_rules_over_spans(concatenated, plan, locale_data, ctx, guarded)
         pieces = Spans.split_on_marker(transformed, normalized.length)
         normalized.each_with_index.map { |span, i| [span, pieces[i]] }
       end
@@ -91,12 +96,16 @@ module Polytypo
         normalized = Spans.normalize_spans(spans)
         return [] if normalized.empty?
 
+        guarded = normalized.map { |s| s.url_tail == true }
         Engine::Pipeline.run_rules_recording(
           Spans.concatenate_spans(source_cp, normalized),
           plan, locale_data, ctx,
           Spans.origin_of_spans(normalized),
           source_cp.length
-        ) { |current, edits| Spans.filter_boundary_edits(current, edits, Spans.span_ranges_of(current)) }
+        ) do |current, edits|
+          Spans.filter_boundary_edits(current, edits, Spans.span_ranges_of(current),
+                                      delimiter_neighbours: ctx.mode == "markdown", guarded: guarded)
+        end
       end
     end
   end

@@ -18,7 +18,10 @@ module Polytypo
       # A processable span, identified by its offsets in the original source, addressed as
       # code-point indices (ARCHITECTURE.md section 4.2) -- Ruby String indices are already
       # code-point indices for a UTF-8 String, no separate byte/char distinction to manage here.
-      Span = Struct.new(:start, :end)
+      #
+      # +url_tail+ is true (or nil) on a span that begins at the U+0020 or U+0009 ending a bare web
+      # address, so the filter can guard its first code point (modes.md 3.7.3, spec 1.17.2).
+      Span = Struct.new(:start, :end, :url_tail)
 
       # A span's extent in the concatenated code-point array: s0/s1 of modes.md 3.4. `:first`
       # deliberately shadows Struct#first with the equivalent one-argument-less accessor -- this
@@ -50,7 +53,7 @@ module Polytypo
             )
           end
           if span.start == last.end
-            out[-1] = Span.new(last.start, span.end)
+            out[-1] = Span.new(last.start, span.end, last.url_tail)
           else
             out << span
           end
@@ -106,6 +109,35 @@ module Polytypo
       end
       private_class_method :span_containing
 
+      DELIMITERS = [0x2A, 0x5F, 0x7E].freeze
+
+      def self.markdown_whitespace?(c)
+        return false if c.nil?
+
+        [0x09, 0x0A, 0x0C, 0x0D, 0x20, 0xA0, 0x1680, 0x202F, 0x205F, 0x3000].include?(c) ||
+          (c >= 0x2000 && c <= 0x200A)
+      end
+      private_class_method :markdown_whitespace?
+
+      # modes.md 3.4 delimiter-neighbour rule (markdown only, spec 1.17.2): an edit is discarded
+      # when, beside U+002A, U+005F or U+007E, exactly one of the old and new neighbour is
+      # CommonMark whitespace. A marker belongs to neither class, nor does a position outside the
+      # array. An insertion has q = p - 1.
+      def self.changes_delimiter_flank?(cp, p, q, replacement)
+        r = replacement.length
+        before_edit = p.positive? ? cp[p - 1] : nil
+        if DELIMITERS.include?(before_edit)
+          after = r.positive? ? replacement[0] : cp[q + 1]
+          return true if markdown_whitespace?(cp[p]) != markdown_whitespace?(after)
+        end
+        if q + 1 < cp.length && DELIMITERS.include?(cp[q + 1])
+          after = r.positive? ? replacement[r - 1] : before_edit
+          return true if markdown_whitespace?(q.negative? ? nil : cp[q]) != markdown_whitespace?(after)
+        end
+        false
+      end
+      private_class_method :changes_delimiter_flank?
+
       # modes.md 3.4, two safety nets, both pure functions of (p, q, r, s0, s1):
       #
       #  1. No edit may contain a marker -- one that does is a bug, discarded rather than
@@ -118,7 +150,11 @@ module Polytypo
       #     clause tests the CHARACTER, and only U+0020 needs testing -- it is the one code
       #     point any rule emits whose meaning comes from its position rather than from itself
       #     (modes.md 5 item 2).
-      def self.filter_boundary_edits(cp, edits, ranges)
+      #
+      # +delimiter_neighbours+ (markdown only) enables the delimiter-neighbour rule of modes.md 3.4,
+      # and +guarded+ holds, per span, whether its first code point is the terminator of a bare web
+      # address (modes.md 3.7.3); both spec 1.17.2.
+      def self.filter_boundary_edits(cp, edits, ranges, delimiter_neighbours: false, guarded: [])
         edits.select do |edit|
           next false if (edit.start...edit.end).any? { |i| Engine.marker?(cp[i]) }
 
@@ -126,7 +162,13 @@ module Polytypo
           q = edit.end - 1
           d = edit.end - edit.start
           r = edit.replacement.length
+          next false if delimiter_neighbours && changes_delimiter_flank?(cp, p, q, edit.replacement)
+
           span = span_containing(ranges, p)
+          if span && p == span.first && guarded[ranges.index(span)] == true &&
+             (r.zero? || edit.replacement[0] != SPACE)
+            next false
+          end
           next true unless span && (p == span.first || q == span.last)
           next false if r > d
           next false if r.positive? && p == span.first && edit.replacement[0] == SPACE && cp[p] != SPACE

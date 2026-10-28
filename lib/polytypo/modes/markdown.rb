@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "set"
 require_relative "spans"
 require_relative "html"
 require_relative "yaml"
@@ -287,12 +288,108 @@ module Polytypo
         parser_source = normalize_lone_cr(mask_frontmatter(source, block))
 
         spans = []
+        state = { stack: [], frontmatter_end: block.nil? ? 0 : block.end, labels: [], url_ends: Set.new }
         ParseError.wrap do
-          doc = Commonmarker.parse(parser_source, options: { parse: { sourcepos_chars: true } })
-          walk(doc, chars, line_starts, spans, { stack: [], frontmatter_end: block.nil? ? 0 : block.end })
+          doc = Commonmarker.parse(
+            parser_source,
+            options: { parse: { sourcepos_chars: true }, extension: { footnotes: true } }
+          )
+          walk(doc, chars, line_starts, spans, state)
         end
-        spans
+        trim_url_tails(chars, Spans.normalize_spans(remove_ranges(spans, state[:labels])), state[:url_ends])
       end
+
+      URL_PREFIXES = ["www.", "http://", "https://"].freeze
+
+      # modes.md 3.7.3 (spec 1.17.2): does a bare web address begin at +i+ and fit before +limit+?
+      # ASCII case-insensitive, and no test on the character before it.
+      def self.starts_url?(chars, i, limit)
+        URL_PREFIXES.any? do |word|
+          next false if i + word.length > limit
+
+          word.each_char.with_index.all? do |ch, k|
+            c = chars[i + k]
+            (c.ord >= 0x41 && c.ord <= 0x5A ? c.downcase : c) == ch
+          end
+        end
+      end
+      private_class_method :starts_url?
+
+      URL_TERMINATORS = [SPACE, TAB, LF, CR, "<"].freeze
+
+      # modes.md 3.7.3 (spec 1.17.2): the tail of a bare web address, found by scanning the source
+      # rather than asking a parser, because parsers disagree about where one may start and end. A
+      # span that begins at the U+0020 or U+0009 ending such an address is flagged +url_tail+, which
+      # guards its first code point (modes.md 3.4, Spans.filter_boundary_edits).
+      def self.trim_url_tails(chars, spans, url_ends)
+        out = []
+        spans.each do |span|
+          from = span.start
+          i = span.start
+          guard = span.url_tail == true ||
+                  (url_ends.include?(span.start) && [SPACE, TAB].include?(chars[span.start]))
+          while i < span.end
+            unless (i == span.start && url_ends.include?(i)) || starts_url?(chars, i, span.end)
+              i += 1
+              next
+            end
+            e = i
+            e += 1 while e < span.end && !URL_TERMINATORS.include?(chars[e])
+            if e == i
+              i += 1
+              next
+            end
+            out << Spans::Span.new(from, i, guard ? true : nil) if i > from
+            guard = e < span.end && [SPACE, TAB].include?(chars[e])
+            from = e
+            i = e
+          end
+          out << Spans::Span.new(from, span.end, guard ? true : nil) if from < span.end
+        end
+        out
+      end
+      private_class_method :trim_url_tails
+
+      def self.remove_ranges(spans, ranges)
+        return spans if ranges.empty?
+
+        spans.flat_map do |span|
+          ranges.reduce([span]) do |pieces, r|
+            pieces.flat_map do |q|
+              next [q] if r.end <= q.start || r.start >= q.end
+
+              res = []
+              res << Spans::Span.new(q.start, r.start) if q.start < r.start
+              res << Spans::Span.new(r.end, q.end) if r.end < q.end
+              res
+            end
+          end
+        end
+      end
+      private_class_method :remove_ranges
+
+      # modes.md 3.7.3 (spec 1.17.2): the text of a shortcut or collapsed reference is its label.
+      # A node exists only when the parser formed it from a definition, so the kind is read off the
+      # source after the closing bracket of the text: nothing (shortcut), "[]" (collapsed); a
+      # resource "(...)" or a non-empty "[label]" (full) leaves the text processable.
+      def self.reference_label_range(node, chars, line_starts)
+        sp = node.source_position
+        start_offset = offset_of(line_starts, sp[:start_line], sp[:start_column])
+        end_offset = offset_of(line_starts, sp[:end_line], sp[:end_column])
+        last = node.to_a.last
+        return nil if last.nil?
+
+        lsp = last.source_position
+        close = offset_of(line_starts, lsp[:end_line], lsp[:end_column]) + 1
+        return nil unless chars[close] == "]"
+
+        shortcut = end_offset == close
+        collapsed = end_offset == close + 2 && chars[close + 1] == "[" && chars[close + 2] == "]"
+        return nil unless shortcut || collapsed
+
+        Spans::Span.new(start_offset + (node.type == :image ? 2 : 1), close)
+      end
+      private_class_method :reference_label_range
 
       # line_starts[i] is the 0-based code-point index at which comrak's 1-based line i begins.
       # comrak counts CommonMark line endings, which are U+000A, U+000D, and U+000D U+000A --
@@ -347,12 +444,20 @@ module Polytypo
         if type == :link || type == :image
           sp = node.source_position
           start_offset = offset_of(line_starts, sp[:start_line], sp[:start_column])
-          unless chars[start_offset] == "["
+          opener = type == :image ? start_offset + 1 : start_offset
+          unless chars[opener] == "[" && (type == :link || chars[start_offset] == "!")
             # No leading "[" at the link's own source position: this is an autolink
             # (<https://…> or a bare GFM autolink literal), not a real [text](url) link --
-            # skipped whole, per modes.md 3.7.3.
+            # skipped whole, per modes.md 3.7.3. The end of a literal that begins with a web
+            # prefix is where the tail scan resumes.
+            if type == :link && chars[start_offset] != "<" &&
+               starts_url?(chars, start_offset, chars.length)
+              state[:url_ends] << (offset_of(line_starts, sp[:end_line], sp[:end_column]) + 1)
+            end
             return
           end
+          label = reference_label_range(node, chars, line_starts)
+          state[:labels] << label unless label.nil?
           # A real link/image: fall through to the generic child walk below, which emits the
           # link text (or image alt text) as processable prose. The destination/title are never
           # represented as child nodes at all, so there is nothing further to exclude.
