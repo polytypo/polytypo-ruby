@@ -91,7 +91,6 @@ module Polytypo
         end
         refs
       end
-      private_class_method :find_entity_refs
 
       # Parses "<name ...>", "</name>" or "<name .../>" (as an array of chars) into
       # [name, closing, self_closing]. Comments, declarations and processing instructions

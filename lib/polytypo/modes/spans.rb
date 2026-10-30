@@ -138,6 +138,57 @@ module Polytypo
       end
       private_class_method :changes_delimiter_flank?
 
+      def self.ascii_punctuation?(c)
+        return false if c.nil?
+
+        (c >= 0x21 && c <= 0x2F) || (c >= 0x3A && c <= 0x40) || (c >= 0x5B && c <= 0x60) ||
+          (c >= 0x7B && c <= 0x7E)
+      end
+      private_class_method :ascii_punctuation?
+
+      def self.ascii_alphanumeric?(c)
+        return false if c.nil?
+
+        (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A)
+      end
+      private_class_method :ascii_alphanumeric?
+
+      # modes.md 3.4 escape-and-reference rule, item 1 (markdown only, spec 1.17.4): an edit is
+      # discarded when it follows a backslash and changes whether the first code point after the
+      # backslash is ASCII punctuation, which would create or destroy a backslash escape.
+      def self.creates_escape?(cp, p, q, replacement)
+        return false if p - 1 < 0 || cp[p - 1] != 0x5C
+
+        after = replacement.empty? ? cp[q + 1] : replacement[0]
+        ascii_punctuation?(cp[p]) != ascii_punctuation?(after)
+      end
+      private_class_method :creates_escape?
+
+      # modes.md 3.4 escape-and-reference rule, item 2 (markdown and html, spec 1.17.4): a deletion
+      # that makes "&", an optional "#", one or more ASCII letters or digits and ";" adjacent
+      # around the join. A marker is in no class and stops either scan.
+      def self.creates_reference?(cp, p, q, replacement)
+        return false if !replacement.empty? || p - 1 < 0 || q + 1 >= cp.length
+
+        left = p - 1
+        alnum = 0
+        while left >= 0 && ascii_alphanumeric?(cp[left])
+          left -= 1
+          alnum += 1
+        end
+        right = q + 1
+        right += 1 if left >= 0 && cp[left] == 0x26 && cp[right] == 0x23 && alnum.zero?
+        while right < cp.length && ascii_alphanumeric?(cp[right])
+          right += 1
+          alnum += 1
+        end
+        return false if cp[right] != 0x3B || alnum.zero?
+
+        left -= 1 if left >= 0 && cp[left] == 0x23
+        left >= 0 && cp[left] == 0x26
+      end
+      private_class_method :creates_reference?
+
       # modes.md 3.4, two safety nets, both pure functions of (p, q, r, s0, s1):
       #
       #  1. No edit may contain a marker -- one that does is a bug, discarded rather than
@@ -151,10 +202,10 @@ module Polytypo
       #     point any rule emits whose meaning comes from its position rather than from itself
       #     (modes.md 5 item 2).
       #
-      # +delimiter_neighbours+ (markdown only) enables the delimiter-neighbour rule of modes.md 3.4,
-      # and +guarded+ holds, per span, whether its first code point is the terminator of a bare web
-      # address (modes.md 3.7.3); both spec 1.17.2.
-      def self.filter_boundary_edits(cp, edits, ranges, delimiter_neighbours: false, guarded: [])
+      # +mode+ selects the neighbour rules of modes.md 3.4 -- delimiter-neighbour and the escape rule
+      # for markdown, the reference rule for markdown and html -- and +guarded+ holds, per span,
+      # whether its first code point is the terminator of a bare web address (modes.md 3.7.3).
+      def self.filter_boundary_edits(cp, edits, ranges, mode: nil, guarded: [])
         edits.select do |edit|
           next false if (edit.start...edit.end).any? { |i| Engine.marker?(cp[i]) }
 
@@ -162,7 +213,10 @@ module Polytypo
           q = edit.end - 1
           d = edit.end - edit.start
           r = edit.replacement.length
-          next false if delimiter_neighbours && changes_delimiter_flank?(cp, p, q, edit.replacement)
+          markdown = mode == "markdown"
+          next false if markdown && changes_delimiter_flank?(cp, p, q, edit.replacement)
+          next false if markdown && creates_escape?(cp, p, q, edit.replacement)
+          next false if (markdown || mode == "html") && creates_reference?(cp, p, q, edit.replacement)
 
           span = span_containing(ranges, p)
           if span && p == span.first && guarded[ranges.index(span)] == true &&

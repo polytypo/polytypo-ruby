@@ -15,13 +15,12 @@ module Polytypo
       # modes.md 3.4 interposed.
       def self.run_rules_over_spans(cp, plan, locale_data, ctx, guarded = [])
         current = cp
-        markdown = ctx.mode == "markdown"
         plan.each do |rule_id|
           fn = Engine::Registry.rule(rule_id)
           edits = fn.call(current, locale_data, ctx)
           filtered = Spans.filter_boundary_edits(
             current, edits, Spans.span_ranges_of(current),
-            delimiter_neighbours: markdown, guarded: guarded
+            mode: ctx.mode, guarded: guarded
           )
           next if filtered.empty?
 
@@ -104,7 +103,7 @@ module Polytypo
           source_cp.length
         ) do |current, edits|
           Spans.filter_boundary_edits(current, edits, Spans.span_ranges_of(current),
-                                      delimiter_neighbours: ctx.mode == "markdown", guarded: guarded)
+                                      mode: ctx.mode, guarded: guarded)
         end
       end
     end

@@ -45,7 +45,7 @@ module Polytypo
       # breaks (no prose content). Frontmatter is NOT in this list and is not a node type here:
       # comrak's front_matter_delimiter extension is never enabled, because since spec 1.8.0 the
       # block's extent is modes.md 3.7.3a's scan and not a parser's opinion of it.
-      SKIP_WHOLE_TYPES = %i[code code_block thematic_break].freeze
+      SKIP_WHOLE_TYPES = %i[code code_block thematic_break escaped].freeze
 
       # A leaf whose Segment/source_position directly delineates literal, processable prose --
       # comrak's AST is segment-based like goldmark's: structural bytes (emphasis delimiters,
@@ -287,7 +287,10 @@ module Polytypo
         parser_source = normalize_lone_cr(mask_frontmatter(source, block))
 
         spans = []
-        state = { stack: [], frontmatter_end: block.nil? ? 0 : block.end, labels: [], url_ends: Set.new }
+        state = {
+          stack: [], frontmatter_end: block.nil? ? 0 : block.end, labels: [], references: [],
+          url_ends: Set.new
+        }
         ParseError.wrap do
           doc = Commonmarker.parse(
             parser_source,
@@ -295,7 +298,8 @@ module Polytypo
           )
           walk(doc, chars, line_starts, spans, state)
         end
-        trim_url_tails(chars, Spans.normalize_spans(remove_ranges(spans, state[:labels])), state[:url_ends])
+        kept = remove_ranges(spans, state[:labels] + state[:references])
+        trim_url_tails(chars, Spans.normalize_spans(kept), state[:url_ends])
       end
 
       URL_PREFIXES = ["www.", "http://", "https://"].freeze
@@ -352,20 +356,40 @@ module Polytypo
       def self.remove_ranges(spans, ranges)
         return spans if ranges.empty?
 
+        merged = merge_ranges(ranges)
+        starts = merged.map(&:first)
         spans.flat_map do |span|
-          ranges.reduce([span]) do |pieces, r|
-            pieces.flat_map do |q|
-              next [q] if r.end <= q.start || r.start >= q.end
-
-              res = []
-              res << Spans::Span.new(q.start, r.start) if q.start < r.start
-              res << Spans::Span.new(r.end, q.end) if r.end < q.end
-              res
+          # The first merged range that ends after the span starts is the one before the first
+          # start beyond it, or that one's successor; later ranges are visited in order.
+          index = [(starts.bsearch_index { |s| s > span.start } || starts.length) - 1, 0].max
+          cursor = span.start
+          pieces = []
+          while index < merged.length && merged[index].first < span.end
+            from, to = merged[index]
+            if to > cursor
+              pieces << Spans::Span.new(cursor, from) if from > cursor
+              cursor = to
             end
+            index += 1
           end
+          next [span] if cursor == span.start && pieces.empty?
+
+          pieces << Spans::Span.new(cursor, span.end) if cursor < span.end
+          pieces
         end
       end
       private_class_method :remove_ranges
+
+      def self.merge_ranges(ranges)
+        ranges.map { |r| [r.start, r.end] }.sort.each_with_object([]) do |(from, to), out|
+          if out.any? && from <= out[-1][1]
+            out[-1][1] = to if to > out[-1][1]
+          else
+            out << [from, to]
+          end
+        end
+      end
+      private_class_method :merge_ranges
 
       # modes.md 3.7.3 (spec 1.17.2): the text of a shortcut or collapsed reference is its label.
       # A node exists only when the parser formed it from a definition, so the kind is read off the
@@ -426,6 +450,34 @@ module Polytypo
       end
       private_class_method :emit_span
 
+      # modes.md 3.7.3 (spec 1.17.4): a character reference the parser recognises is an opaque unit
+      # outside every span, as in html (3.6). comrak folds a reference into its text node, so the
+      # candidates are found by shape in the node's source and each is kept only when the parser
+      # does recognise it: a numeric one within CommonMark's digit limits, a named one when parsing
+      # it alone yields something other than its own spelling.
+      def self.note_references(chars, start_offset, end_offset, state)
+        slice = chars[start_offset...end_offset]
+        Html.find_entity_refs(slice).each do |from, to|
+          text = slice[from...to].join
+          next unless recognised_reference?(text)
+
+          state[:references] << Spans::Span.new(start_offset + from, start_offset + to)
+        end
+      end
+      private_class_method :note_references
+
+      def self.recognised_reference?(text)
+        case text
+        when /\A&#[xX](\h{1,6});\z/o, /\A&#(\d{1,7});\z/o
+          true
+        when /\A&#/
+          false
+        else
+          Commonmarker.parse(text).first_child.first_child.string_content != text
+        end
+      end
+      private_class_method :recognised_reference?
+
       def self.walk(node, chars, line_starts, spans, state)
         type = node.type
         return if SKIP_WHOLE_TYPES.include?(type)
@@ -466,7 +518,10 @@ module Polytypo
           sp = node.source_position
           start_offset = offset_of(line_starts, sp[:start_line], sp[:start_column])
           end_offset = offset_of(line_starts, sp[:end_line], sp[:end_column]) + 1
-          emit_span(spans, start_offset, end_offset, state) if state[:stack].empty?
+          if state[:stack].empty?
+            emit_span(spans, start_offset, end_offset, state)
+            note_references(chars, start_offset, end_offset, state)
+          end
           return
         end
 
