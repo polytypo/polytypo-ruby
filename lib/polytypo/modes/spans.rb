@@ -157,7 +157,7 @@ module Polytypo
       # discarded when it follows a backslash and changes whether the first code point after the
       # backslash is ASCII punctuation, which would create or destroy a backslash escape.
       def self.creates_escape?(cp, p, q, replacement)
-        return false if p - 1 < 0 || cp[p - 1] != 0x5C
+        return false if (p - 1).negative? || cp[p - 1] != 0x5C
 
         after = replacement.empty? ? cp[q + 1] : replacement[0]
         ascii_punctuation?(cp[p]) != ascii_punctuation?(after)
@@ -168,7 +168,7 @@ module Polytypo
       # that makes "&", an optional "#", one or more ASCII letters or digits and ";" adjacent
       # around the join. A marker is in no class and stops either scan.
       def self.creates_reference?(cp, p, q, replacement)
-        return false if !replacement.empty? || p - 1 < 0 || q + 1 >= cp.length
+        return false if !replacement.empty? || (p - 1).negative? || q + 1 >= cp.length
 
         left = p - 1
         alnum = 0
