@@ -131,7 +131,7 @@ module Polytypo
 
         # The target dash glyph for a style value.
         def dash_code_point(style)
-          style == "em-tight" || style == "em-spaced" ? EM_DASH : EN_DASH
+          style == "em-tight" || style == "em-spaced" || style == "em-paired" ? EM_DASH : EN_DASH
         end
 
         # Whether cp[start...end] is exactly `next`, code point for code point.
@@ -285,36 +285,47 @@ module Polytypo
         # `dashes` token becoming spaced can insert a space next to a `ranges` token's digit run,
         # and vice versa.
         def spacing_transition_blocked?(cp, left, right)
+          spacing_transition_blocked_left?(cp, left) || spacing_transition_blocked_right?(cp, right)
+        end
+
+        # The left half of T1, for a form that inserts a space on one side only (`em-paired`).
+        def spacing_transition_blocked_left?(cp, left)
           n = cp.length
 
           # Spec 1.3.0, position p1: step over a CLOSED-SYMBOL between the token and the run.
           left -= 1 if left >= 0 && left < n && closed_up_symbol?(cp[left]) && left.positive? &&
                        digit?(cp[left - 1])
+
+          return false unless left >= 0 && left < n && digit?(cp[left])
+
+          d = left
+          d -= 1 while d.positive? && digit?(cp[d - 1])
+          # Position p2: and over one at the far end of the run.
+          i1 = effective_index(cp, skip_closed_up_symbol(cp, d - 1, -1), -1)
+          one = i1.nil? ? Polytypo::Engine::NONE : cp[i1]
+          two = i1.nil? ? Polytypo::Engine::NONE : effective_neighbour(cp, i1 - 1, -1)
+          return true if dash_union?(one)
+
+          (one == SPACE || no_break_space?(one)) && dash_union?(two)
+        end
+
+        # The right half of T1; see spacing_transition_blocked_left?.
+        def spacing_transition_blocked_right?(cp, right)
+          n = cp.length
+
           right += 1 if right >= 0 && right < n && closed_up_symbol?(cp[right]) &&
                         right + 1 < n && digit?(cp[right + 1])
 
-          if left >= 0 && left < n && digit?(cp[left])
-            d = left
-            d -= 1 while d.positive? && digit?(cp[d - 1])
-            # Position p2: and over one at the far end of the run.
-            i1 = effective_index(cp, skip_closed_up_symbol(cp, d - 1, -1), -1)
-            one = i1.nil? ? Polytypo::Engine::NONE : cp[i1]
-            two = i1.nil? ? Polytypo::Engine::NONE : effective_neighbour(cp, i1 - 1, -1)
-            return true if dash_union?(one)
-            return true if (one == SPACE || no_break_space?(one)) && dash_union?(two)
-          end
+          return false unless right >= 0 && right < n && digit?(cp[right])
 
-          if right >= 0 && right < n && digit?(cp[right])
-            d = right
-            d += 1 while d + 1 < n && digit?(cp[d + 1])
-            i1 = effective_index(cp, skip_closed_up_symbol(cp, d + 1, 1), 1)
-            one = i1.nil? ? Polytypo::Engine::NONE : cp[i1]
-            two = i1.nil? ? Polytypo::Engine::NONE : effective_neighbour(cp, i1 + 1, 1)
-            return true if dash_union?(one)
-            return true if (one == SPACE || no_break_space?(one)) && dash_union?(two)
-          end
+          d = right
+          d += 1 while d + 1 < n && digit?(cp[d + 1])
+          i1 = effective_index(cp, skip_closed_up_symbol(cp, d + 1, 1), 1)
+          one = i1.nil? ? Polytypo::Engine::NONE : cp[i1]
+          two = i1.nil? ? Polytypo::Engine::NONE : effective_neighbour(cp, i1 + 1, 1)
+          return true if dash_union?(one)
 
-          false
+          (one == SPACE || no_break_space?(one)) && dash_union?(two)
         end
 
         # dashes.md 3.2 steps 1-7 and 3.2a, exactly as they read before the `ranges` split -- the

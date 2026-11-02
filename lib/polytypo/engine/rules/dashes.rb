@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "dash_shared"
+require_relative "dashes_paired"
 require_relative "../edits"
 require_relative "../registry"
 require_relative "../unicode_util"
@@ -66,8 +67,10 @@ module Polytypo
         end
 
         def scan(cp, locale_data, _ctx)
-          edits = []
           style = locale_data["dash"]["parenthetical"]
+          return DashesPaired.scan(cp) if style == "em-paired"
+
+          edits = []
 
           DashShared.find_tokens(cp).each do |token|
             # A digit-flanked token is `ranges`' territory, never `dashes`' -- declined
