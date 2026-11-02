@@ -42,6 +42,20 @@ module Polytypo
           Polytypo::Engine::UnicodeUtil.letter?(cp) || DashShared.digit?(cp)
         end
 
+        # dashes.md 3.2 steps 5-7: content on the same line, no dash or space beside the stroke's
+        # outer spacing, and not part of a cluster holding another dash run.
+        def neighbours_clean?(cp, s, e, left, right)
+          left_cp = cp[left]
+          right_cp = cp[right]
+          return false if DashShared.break?(left_cp) || DashShared.break?(right_cp)
+          return false if DashShared.inert_dash?(left_cp) || DashShared.inert_dash?(right_cp)
+          return false if DashShared.dash?(left_cp) || DashShared.dash?(right_cp)
+          return false if left_cp == DashShared::SPACE || DashShared.no_break_space?(left_cp)
+          return false if right_cp == DashShared::SPACE || DashShared.no_break_space?(right_cp)
+
+          !DashShared.cluster_inert?(cp, s, e)
+        end
+
         # Returns nil when the run is not a stroke at all, otherwise a Run (eligible or not).
         def classify(cp, s, e)
           n = cp.length
@@ -77,14 +91,7 @@ module Polytypo
           return nil unless DashShared.range_flanks(cp, left, right).nil?
           return counted.call(false) if crossed_joiner
 
-          left_cp = cp[left]
-          right_cp = cp[right]
-          return counted.call(false) if DashShared.break?(left_cp) || DashShared.break?(right_cp)
-          return counted.call(false) if DashShared.inert_dash?(left_cp) || DashShared.inert_dash?(right_cp)
-          return counted.call(false) if DashShared.dash?(left_cp) || DashShared.dash?(right_cp)
-          return counted.call(false) if left_cp == DashShared::SPACE || DashShared.no_break_space?(left_cp)
-          return counted.call(false) if right_cp == DashShared::SPACE || DashShared.no_break_space?(right_cp)
-          return counted.call(false) if DashShared.cluster_inert?(cp, s, e)
+          return counted.call(false) unless neighbours_clean?(cp, s, e, left, right)
 
           # A stroke spaced on one side only is eligible solely as the one em dash that is already
           # half of the target form; `-mente`, `pre-`, `--force` and `- item` are not dashes.
