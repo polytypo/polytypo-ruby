@@ -189,6 +189,56 @@ module Polytypo
       end
       private_class_method :creates_reference?
 
+      # modes.md 3.4 bracket-shape rule (markdown only, spec 1.17.5): a deletion that joins a
+      # task-list marker or a footnote label. A marker or a position outside the array is in no
+      # class. Ruby indexes negatively, so every read goes through +code_point_at+.
+      def self.code_point_at(cp, i)
+        i.negative? ? nil : cp[i]
+      end
+      private_class_method :code_point_at
+
+      def self.skip_spaces(cp, i, step)
+        k = i
+        k += step while k >= 0 && k < cp.length && cp[k] == SPACE
+        k
+      end
+      private_class_method :skip_spaces
+
+      def self.x_letter?(c)
+        c == 0x78 || c == 0x58
+      end
+      private_class_method :x_letter?
+
+      def self.label_character?(c)
+        !c.nil? && c >= 0 && c != SPACE && c != 0x5B && c != 0x5D
+      end
+      private_class_method :label_character?
+
+      def self.creates_bracket_shape?(cp, p, q, replacement)
+        is_collapse = replacement.length == 1 && replacement[0] == SPACE
+        return false unless replacement.empty? || is_collapse
+
+        a = skip_spaces(cp, p - 1, -1)
+        b = skip_spaces(cp, q + 1, 1)
+        at_a = code_point_at(cp, a)
+        at_b = code_point_at(cp, b)
+        return at_a == 0x5B && at_b == 0x5D if is_collapse
+        return true if at_a == 0x5B && at_b == 0x5D
+        if at_a == 0x5B
+          return true if at_b == 0x5E
+
+          return x_letter?(at_b) && code_point_at(cp, skip_spaces(cp, b + 1, 1)) == 0x5D
+        end
+        return false if at_b != 0x5D
+        return true if x_letter?(at_a) && code_point_at(cp, skip_spaces(cp, a - 1, -1)) == 0x5B
+
+        run = a
+        run -= 1 while run >= 0 && label_character?(cp[run])
+        first = run + 1
+        a - first >= 1 && cp[first] == 0x5E && code_point_at(cp, skip_spaces(cp, run, -1)) == 0x5B
+      end
+      private_class_method :creates_bracket_shape?
+
       # modes.md 3.4, two safety nets, both pure functions of (p, q, r, s0, s1):
       #
       #  1. No edit may contain a marker -- one that does is a bug, discarded rather than
@@ -202,8 +252,8 @@ module Polytypo
       #     point any rule emits whose meaning comes from its position rather than from itself
       #     (modes.md 5 item 2).
       #
-      # +mode+ selects the neighbour rules of modes.md 3.4 -- delimiter-neighbour and the escape rule
-      # for markdown, the reference rule for markdown and html -- and +guarded+ holds, per span,
+      # +mode+ selects the neighbour rules of modes.md 3.4 -- delimiter-neighbour, the escape rule
+      # and the bracket-shape rule for markdown, the reference rule for markdown and html -- and +guarded+ holds, per span,
       # whether its first code point is the terminator of a bare web address (modes.md 3.7.3).
       def self.filter_boundary_edits(cp, edits, ranges, mode: nil, guarded: [])
         edits.select do |edit|
@@ -216,6 +266,7 @@ module Polytypo
           markdown = mode == "markdown"
           next false if markdown && changes_delimiter_flank?(cp, p, q, edit.replacement)
           next false if markdown && creates_escape?(cp, p, q, edit.replacement)
+          next false if markdown && creates_bracket_shape?(cp, p, q, edit.replacement)
           next false if (markdown || mode == "html") && creates_reference?(cp, p, q, edit.replacement)
 
           span = span_containing(ranges, p)
