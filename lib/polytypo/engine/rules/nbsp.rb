@@ -127,6 +127,18 @@ module Polytypo
           keyword_init: true,
         )
 
+        # One N5 entry: the unit as code points and which list it came from.
+        UnitEntry = Struct.new(:w, :kind)
+
+        # nbsp.md 3.7: the three unit lists merged so the longest entry wins across all of them.
+        def self.prepare_units(data)
+          out = []
+          [["beforeUnits", :before], ["spacedUnits", :spaced], ["closedUnits", :closed]].each do |field, kind|
+            data[field].each { |entry| out << UnitEntry.new(entry.codepoints, kind) }
+          end
+          out.each_with_index.sort_by { |entry, i| [-entry.w.length, i] }.map(&:first)
+        end
+
         def self.malformed(message)
           raise Polytypo::Error.new(Polytypo::CODE_MALFORMED_LOCALE_DATA, message)
         end
@@ -202,7 +214,7 @@ module Polytypo
             narrow_before_punctuation: narrow_before_punctuation,
             short_words: prepare_list(data["afterShortWords"]),
             abbreviations: prepare_list(data["abbreviations"]),
-            units: prepare_list(data["beforeUnits"]),
+            units: prepare_units(data),
             before_number: prepare_list(data["beforeNumber"]),
             before_word: prepare_list(data["beforeWord"]),
             symbols: prepare_list(data["afterSymbols"]),
@@ -389,29 +401,155 @@ module Polytypo
           end
         end
 
-        # N5 -- nbsp.md 3.7 beforeUnits. Converts an existing space; never inserts one (7.2).
+        # nbsp.md 3.7 step 5.1: what may stand left of a number that N5 inserts or deletes beside.
+        NUMBER_PREFIXES = [0x2B, 0xB1, 0xD7, 0x2212, 0x7E, 0x2248, 0x3C, 0x3E, 0x2060].freeze
+        HYPHEN_MINUS = 0x2D
+        NON_BREAKING_HYPHEN = 0x2011
+        LOW_LINE = 0x5F
+        COMMA = 0x2C
+        WORD_JOINER = 0x2060
+
+        # ranges.md 3.2a CLOSED-SYMBOL, mirrored (this rule does not depend on `ranges`).
+        def self.closed_symbol?(cp)
+          cp == 0x24 || (cp >= 0xA2 && cp <= 0xA5) || (cp >= 0x20A0 && cp <= 0x20CF) ||
+            cp == 0x25 || cp == 0x2030 || cp == 0x2031 || cp == 0xB0
+        end
+
+        ANY_DASH = [
+          0x2D, 0x2010, 0x2013, 0x2014, 0x2212, 0xAD, 0x2011, 0x2012, 0x2015, 0xFE58, 0xFE63, 0xFF0D,
+        ].freeze
+
+        # dashes.md 3.1 DASH + INERT-DASH.
+        def self.any_dash?(cp)
+          ANY_DASH.include?(cp)
+        end
+
+        # 3.7 step 5.4: the first code point past a run of non-breaking-line spaces and joiners.
+        def self.nearest_beyond(cp, from, step)
+          i = from
+          while i >= 0 && i < cp.length
+            c = cp[i]
+            if c == WORD_JOINER || (space_like?(c) && !break?(c))
+              i += step
+              next
+            end
+            return c
+          end
+          NONE
+        end
+
+        # Start of the number whose last digit is at `end_index`, extended over a decimal or
+        # thousands separator (3.7 step 5.1).
+        def self.number_start(cp, end_index)
+          b = end_index
+          b -= 1 while b - 1 >= 0 && digit?(cp[b - 1])
+          while (at(cp, b - 1) == COMMA || at(cp, b - 1) == FULL_STOP) && digit?(at(cp, b - 2))
+            b -= 2
+            b -= 1 while b - 1 >= 0 && digit?(cp[b - 1])
+          end
+          b
+        end
+
+        MUL_LETTERS = [0x78, 0x58, 0x445, 0x425].freeze
+
+        # symbols.md 3.1 SPACE | NOBREAK-SPACE: U+0020, U+00A0 and U+202F.
+        def self.mul_space?(cp)
+          cp == SPACE || cp == NBSP || cp == NNBSP
+        end
+
+        # 3.7 step 5.5: DIGIT [space] MUL-LETTER [space] immediately before the number start.
+        def self.right_operand_of_multiplication?(cp, b)
+          i = b - 1
+          i -= 1 if mul_space?(at(cp, i))
+          return false unless MUL_LETTERS.include?(at(cp, i))
+
+          i -= 1
+          i -= 1 if mul_space?(at(cp, i))
+          digit?(at(cp, i))
+        end
+
+        def self.number_start_clean?(cp, prep, b)
+          c = at(cp, b - 1)
+          return true if c == NONE || space_like?(c) || openish?(prep, c) || sentence_dash?(c)
+          return true if NUMBER_PREFIXES.include?(c)
+          return false if c != HYPHEN_MINUS
+
+          before = at(cp, b - 2)
+          before == NONE || space_like?(before) || openish?(prep, before)
+        end
+
+        # N5 -- nbsp.md 3.7. beforeUnits converts an existing space, spacedUnits converts and
+        # inserts, closedUnits deletes. The longest entry across the three lists wins at `a`.
         def self.units_sub_rule(cp, prep, claims)
           return if prep.units.empty?
 
           (0...cp.length).each do |a|
-            w = longest_match(prep.units, cp, a, method(:match_exact?))
-            next if w.nil?
+            entry = prep.units.find { |candidate| match_exact?(cp, a, candidate.w) }
+            next if entry.nil?
 
-            k = w.length
+            k = entry.w.length
             next if alnum?(at(cp, a + k))
 
             left = at(cp, a - 1)
-            next if left == NBSP # already correct
-            next if left != SPACE
 
-            next unless digit?(at(cp, a - 2))
+            if entry.kind == :before
+              next if left == NBSP # already correct
+              next if left != SPACE
+              next unless digit?(at(cp, a - 2))
 
-            b = a - 2
+              b = a - 2
+              b -= 1 while b - 1 >= 0 && digit?(cp[b - 1])
+              # The letter guard: "H2 O", "A4", "MP3" are not measurements.
+              next if UnicodeUtil.letter?(at(cp, b - 1))
+
+              claim_conversion(claims, a - 1, NBSP)
+              next
+            end
+
+            closed = entry.kind == :closed
+            separated = left == SPACE || left == NBSP || (closed && left == NNBSP)
+            touching = digit?(left)
+            next if !separated && !(touching && !closed)
+            next if !closed && left == NBSP
+
+            end_index = separated ? a - 2 : a - 1
+            next unless digit?(at(cp, end_index))
+
+            b = end_index
             b -= 1 while b - 1 >= 0 && digit?(cp[b - 1])
-            # The letter guard: "H2 O", "A4", "MP3" are not measurements.
             next if UnicodeUtil.letter?(at(cp, b - 1))
 
-            claim_conversion(claims, a - 1, NBSP)
+            # Converting an existing space keeps beforeUnits' behaviour; the guards below protect
+            # only what N5 would otherwise insert or delete (3.7 step 5).
+            if !closed && separated
+              claim_conversion(claims, a - 1, NBSP) if left == SPACE
+              next
+            end
+
+            start = number_start(cp, end_index)
+            next unless number_start_clean?(cp, prep, start)
+
+            # A closed-up symbol beside a dash decides whether `ranges` and `dashes` read the
+            # token as a range; editing the space between the number and the symbol would change
+            # that verdict on the next pass (3.7 step 5.3).
+            if closed_symbol?(entry.w[0]) &&
+               (any_dash?(nearest_beyond(cp, start - 1, -1)) || any_dash?(nearest_beyond(cp, a + k, 1)))
+              next
+            end
+
+            next if !closed && right_operand_of_multiplication?(cp, start)
+
+            following = at(cp, a + k)
+            next if following == HYPHEN_MINUS || following == NON_BREAKING_HYPHEN || following == LOW_LINE
+            next if following == FULL_STOP && alnum?(at(cp, a + k + 1))
+
+            if closed
+              next if following == SPACE && digit?(at(cp, a + k + 1))
+
+              claims[a - 1] = Edit.new(a - 1, a, [], "nbsp") if claims[a - 1].nil?
+            else
+              claim_insertion(claims, a, NBSP)
+            end
           end
         end
 
