@@ -9,7 +9,7 @@ require "json"
 # are cheap to get wrong (analyze.md section 6): A3 over the whole vendored corpus, and document
 # offsets under the mode adapters.
 RSpec.describe "Polytypo.analyze" do
-  rule_order = %w[spaces ellipsis ranges dashes hyphen quotes apostrophe symbols nbsp].freeze
+  rule_order = %w[spaces ellipsis ranges dashes hyphen quotes quote-punctuation apostrophe symbols nbsp].freeze
 
   def rule_ids(changes)
     changes.map(&:rule_id)

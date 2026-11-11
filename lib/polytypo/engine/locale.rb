@@ -29,8 +29,29 @@ module Polytypo
       def self.locale_data_raw(locale_id)
         @locale_data_raw ||= {}
         @locale_data_raw[locale_id] ||=
-          JSON.parse(File.read(File.join(DATA_DIR, "locales", "#{locale_id}.json")))
+          validate_locale_data(
+            locale_id,
+            JSON.parse(File.read(File.join(DATA_DIR, "locales", "#{locale_id}.json"))),
+          )
       end
+
+      PUNCTUATION_PLACEMENTS = %w[inside none].freeze
+
+      # quote-punctuation.md 2: `quotes.punctuationPlacement` is required in every locale file and
+      # is one of "inside" / "none". A missing or unknown value is a spec-data bug, reported
+      # rather than treated as "none".
+      def self.validate_locale_data(locale_id, data)
+        quotes = data.is_a?(Hash) ? data["quotes"] : nil
+        placement = quotes.is_a?(Hash) ? quotes["punctuationPlacement"] : nil
+        return data if PUNCTUATION_PLACEMENTS.include?(placement)
+
+        raise Polytypo::Error.new(
+          Polytypo::CODE_MALFORMED_LOCALE_DATA,
+          "locale #{locale_id.inspect}: quotes.punctuationPlacement must be \"inside\" or " \
+          "\"none\"; received #{placement.inspect}"
+        )
+      end
+      private_class_method :validate_locale_data
 
       def self.lower_ascii?(cp)
         cp >= LOWER_A && cp <= LOWER_Z

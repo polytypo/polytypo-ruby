@@ -94,7 +94,7 @@ module Polytypo
     # spec data in Registry/Locale (ARCHITECTURE.md section 7).
     module Pipeline
       # Defaults + opt-out overrides. rules_option is opt-out only (ARCHITECTURE.md section 7):
-      # it may only disable a default-on rule or enable the one default-off rule ("ranges"). An
+      # it may only disable a default-on rule or enable a default-off one ("ranges", "quote-punctuation"). An
       # unknown key raises POLYTYPO_UNKNOWN_RULE.
       def self.resolve_rule_plan(rules_option)
         defaults = Registry.rule_defaults
