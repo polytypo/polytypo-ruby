@@ -114,8 +114,8 @@ RSpec.describe "quote-punctuation" do
         .to eq("She said “hello”, then left.")
       expect(Polytypo.transform('She said "hello", then left.', locale: "en-US", rules: {}))
         .to eq("She said “hello”, then left.")
-      expect(Polytypo.transform('She said "hello", then left.', locale: "en-US",
-                                rules: { "quote-punctuation" => false }))
+      off = { "quote-punctuation" => false }
+      expect(Polytypo.transform('She said "hello", then left.', locale: "en-US", rules: off))
         .to eq("She said “hello”, then left.")
     end
 
