@@ -478,6 +478,37 @@ module Polytypo
           before == NONE || space_like?(before) || openish?(prep, before)
         end
 
+        # beforeUnits: convert one existing space after a number, with the letter guard
+        # ("H2 O", "A4", "MP3" are not measurements).
+        def self.convert_before_unit(cp, a, left, claims)
+          return if left != SPACE
+          return unless digit?(at(cp, a - 2))
+
+          b = a - 2
+          b -= 1 while b - 1 >= 0 && digit?(cp[b - 1])
+          return if UnicodeUtil.letter?(at(cp, b - 1))
+
+          claim_conversion(claims, a - 1, NBSP)
+        end
+
+        # nbsp.md 3.7 step 5: the guards on inserting or deleting the separator.
+        def self.unit_edit_allowed?(cp, entry, a, start, closed)
+          k = entry.w.length
+          # A closed-up symbol beside a dash decides whether `ranges` and `dashes` read the
+          # token as a range; editing the space between the number and the symbol would change
+          # that verdict on the next pass (step 5.3).
+          if closed_symbol?(entry.w[0]) &&
+             (any_dash?(nearest_beyond(cp, start - 1, -1)) || any_dash?(nearest_beyond(cp, a + k, 1)))
+            return false
+          end
+          return false if !closed && right_operand_of_multiplication?(cp, start)
+
+          following = at(cp, a + k)
+          return false if following == HYPHEN_MINUS || following == NON_BREAKING_HYPHEN || following == LOW_LINE
+
+          !(following == FULL_STOP && alnum?(at(cp, a + k + 1)))
+        end
+
         # N5 -- nbsp.md 3.7. beforeUnits converts an existing space, spacedUnits converts and
         # inserts, closedUnits deletes. The longest entry across the three lists wins at `a`.
         def self.units_sub_rule(cp, prep, claims)
@@ -493,16 +524,7 @@ module Polytypo
             left = at(cp, a - 1)
 
             if entry.kind == :before
-              next if left == NBSP # already correct
-              next if left != SPACE
-              next unless digit?(at(cp, a - 2))
-
-              b = a - 2
-              b -= 1 while b - 1 >= 0 && digit?(cp[b - 1])
-              # The letter guard: "H2 O", "A4", "MP3" are not measurements.
-              next if UnicodeUtil.letter?(at(cp, b - 1))
-
-              claim_conversion(claims, a - 1, NBSP)
+              convert_before_unit(cp, a, left, claims)
               next
             end
 
@@ -529,19 +551,9 @@ module Polytypo
             start = number_start(cp, end_index)
             next unless number_start_clean?(cp, prep, start)
 
-            # A closed-up symbol beside a dash decides whether `ranges` and `dashes` read the
-            # token as a range; editing the space between the number and the symbol would change
-            # that verdict on the next pass (3.7 step 5.3).
-            if closed_symbol?(entry.w[0]) &&
-               (any_dash?(nearest_beyond(cp, start - 1, -1)) || any_dash?(nearest_beyond(cp, a + k, 1)))
-              next
-            end
-
-            next if !closed && right_operand_of_multiplication?(cp, start)
+            next unless unit_edit_allowed?(cp, entry, a, start, closed)
 
             following = at(cp, a + k)
-            next if following == HYPHEN_MINUS || following == NON_BREAKING_HYPHEN || following == LOW_LINE
-            next if following == FULL_STOP && alnum?(at(cp, a + k + 1))
 
             if closed
               next if following == SPACE && digit?(at(cp, a + k + 1))
