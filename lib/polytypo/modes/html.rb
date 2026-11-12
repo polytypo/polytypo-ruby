@@ -218,6 +218,10 @@ module Polytypo
         return if skip_depth != 0 || to <= from
 
         slice = chars[from...to]
+        # modes.md 3.6: a whitespace-only node holding a line break is no span, so the gap test
+        # between its neighbours sees the line terminator and yields the line marker.
+        return if line_break_whitespace?(slice)
+
         refs = find_entity_refs(slice)
         cursor = 0
         refs.each do |ref_start, ref_end|
@@ -227,6 +231,12 @@ module Polytypo
         spans << Spans::Span.new(from + cursor, to) if cursor < slice.length
       end
       private_class_method :emit_text
+
+      def self.line_break_whitespace?(chars)
+        chars.all? { |c| c == " " || c == "\t" || c == "\n" || c == "\f" || c == "\r" } &&
+          chars.any? { |c| c == "\n" || c == "\f" || c == "\r" }
+      end
+      private_class_method :line_break_whitespace?
     end
   end
 end
