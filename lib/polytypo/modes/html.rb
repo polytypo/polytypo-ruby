@@ -20,7 +20,7 @@ module Polytypo
       # modes.md 3.6, exhaustive and CLOSED: extending it is a spec change, not an implementation
       # decision. svg/math are here because in MathML a quotation mark, a hyphen and a prime are
       # operators and identifiers -- substituting a curly glyph changes what the expression means.
-      SKIPPED_ELEMENTS = %w[code pre kbd samp var script style textarea svg math].freeze
+      SKIPPED_ELEMENTS = %w[code pre kbd samp var script style textarea svg math].each(&:freeze).freeze
 
       # HTML5 void elements: never pushed onto the element stack, since an author is not required
       # to close them and this tokenizer never synthesizes a matching end tag for one.

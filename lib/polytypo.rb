@@ -17,6 +17,10 @@ require_relative "polytypo/modes/yaml"
 # (github.com/polytypo/polytypo). See spec/CONFORMANCE.md there for exactly what this runtime
 # implements.
 module Polytypo
+  # The elements whose whole subtree html mode leaves alone, as frozen lowercase strings in spec
+  # order (modes.md 3.6). The mode's own membership test reads this same array.
+  SKIPPED_ELEMENTS = Modes::Html::SKIPPED_ELEMENTS
+
   # Applies polytypo's rule pipeline to +input+ and returns the result.
   #
   # +locale+ is required, with no default -- an unknown locale raises Polytypo::Error with

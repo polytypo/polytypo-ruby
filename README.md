@@ -62,6 +62,10 @@ Polytypo.transform(%q{<a title="test... wait">Wait... she said "go on."</a>}, lo
 # => "<a title=\"test... wait\">Wait… she said “go on.”</a>"
 ```
 
+`html` mode leaves ten elements alone, with everything inside them: `code`, `pre`, `kbd`, `samp`,
+`var`, `script`, `style`, `textarea`, `svg` and `math`. If you walk a document with a parser of your
+own, read `Polytypo::SKIPPED_ELEMENTS` instead of copying the names; it is a frozen array.
+
 `locale:` has no default anywhere and must always be passed explicitly — there is no silent
 fallback to English. `mode:` defaults to `"text"` if omitted.
 
