@@ -103,9 +103,9 @@ RSpec.describe "ranges: closed-up symbols" do
     end
   end
 
-  describe "the accepted cost, with default options" do
-    it "no longer converts a spaced token between matched symbols" do
-      expect(Polytypo.transform("$15 - $20", locale: "en-US")).to eq("$15 - $20")
+  describe "the accepted cost" do
+    it "no longer converts a spaced token between matched symbols, with ranges off" do
+      expect(Polytypo.transform("$15 - $20", locale: "en-US", rules: { "ranges" => false })).to eq("$15 - $20")
     end
 
     it "still converts one between unmatched symbols, which never became a candidate" do

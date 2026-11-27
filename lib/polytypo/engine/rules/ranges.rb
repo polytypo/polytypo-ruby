@@ -8,10 +8,10 @@ require_relative "../unicode_util"
 module Polytypo
   module Engine
     module Rules
-      # `ranges` -- spec/rules/ranges.md, order 25. Explicit opt-in: off by default
-      # (order.json's "default": "off" for this rule id; the pipeline's rule-plan resolution, not
-      # this file, is what enforces that). Split out of `dashes` (spec 0.5.0) -- see ranges.md 1
-      # and dashes.md 7.11 for why this is opt-in rather than a bounded structural fix: separating
+      # `ranges` -- spec/rules/ranges.md, order 25. On by default since spec 1.33.0
+      # (order.json's "default" for this rule id; the pipeline's rule-plan resolution, not this
+      # file, is what enforces that). Split out of `dashes` (spec 0.5.0) -- see ranges.md 1
+      # and dashes.md 7.11 for why this is a separate rule rather than a bounded structural fix: separating
       # a genuine numeric range (`5-10`) from a compound label sharing the identical shape
       # (`Figure 5-10`) needs the preceding word, which is exactly the open-ended, per-locale
       # context this project's rules are built never to consult.

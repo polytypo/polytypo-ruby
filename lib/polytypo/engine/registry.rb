@@ -20,7 +20,7 @@ module Polytypo
         @rule_order ||= order_data["rules"].sort_by { |r| r["order"] }.map { |r| r["id"] }
       end
 
-      # Rule id -> default enabled/disabled (only "ranges" defaults to false). order.json's
+      # Rule id -> default enabled/disabled (only "quote-punctuation" defaults to false). order.json's
       # "default" field is the string "on"/"off", not a JSON boolean.
       def self.rule_defaults
         @rule_defaults ||= order_data["rules"].to_h { |r| [r["id"], r["default"] == "on"] }

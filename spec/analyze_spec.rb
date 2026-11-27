@@ -97,10 +97,10 @@ RSpec.describe "Polytypo.analyze" do
       expect(ids).to include("ellipsis")
     end
 
-    it "never reports ranges unless it was turned on" do
+    it "never reports ranges once it was turned off" do
       input = "chapters 3-5"
-      expect(rule_ids(Polytypo.analyze(input, locale: "en-US"))).not_to include("ranges")
-      expect(rule_ids(Polytypo.analyze(input, locale: "en-US", rules: { "ranges" => true }))).to include("ranges")
+      expect(rule_ids(Polytypo.analyze(input, locale: "en-US"))).to include("ranges")
+      expect(rule_ids(Polytypo.analyze(input, locale: "en-US", rules: { "ranges" => false }))).not_to include("ranges")
     end
   end
 

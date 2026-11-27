@@ -22,6 +22,8 @@ module Polytypo
       #   Pass 4 (certify)             -- the certification gate (3.5)
       #   Pass 5 (emit)                -- emit edits (3.6)
       module Quotes
+        GATE_ROUNDS_MAX = 8
+
         Candidate = Struct.new(:index, :wide, :can_open, :can_close)
         Pair = Struct.new(:open, :close)
 
@@ -32,7 +34,7 @@ module Polytypo
 
         BREAK = [0x0A, 0x0D, 0x0B, 0x0C, 0x85, 0x2028, 0x2029, Engine::LINE_MARKER].freeze
         DASHISH = [0x2D, 0x2011, 0x2013, 0x2014].freeze
-        OPENISH_LITERAL = [0x28, 0x5B, 0x7B].freeze
+        OPENISH_LITERAL = [0x28, 0x5B, 0x7B, 0xBF, 0xA1].freeze
         CLOSEISH_LITERAL = [0x29, 0x5D, 0x7D, 0x2C, 0x2E, 0x3B, 0x3A, 0x21, 0x3F, 0x2026, 0x2013, 0x2014].freeze
 
         WIDE_SET = WIDE.to_h { |c| [c, true] }.freeze
@@ -88,6 +90,9 @@ module Polytypo
           alnum?(cp) || quote_mark?(cp)
         end
 
+        # Typewriter identities (quotes.md 3.2, spec 1.33.0): U+0022 and, after V1ID, U+0027/U+2019.
+        TYPEWRITER_IDENTITIES = [0x22, 0x2019].freeze
+
         # V1ID (quotes.md 3.2, spec 0.4.1) -- a conservative over-approximation, not a claim that
         # every U+0027 becomes U+2019. apostrophe only ever emits U+2019 for a U+0027, but its own
         # case ladder leaves some U+0027s unedited (the prime guard, and "nothing inferable"), and
@@ -98,6 +103,43 @@ module Polytypo
         # (quotes.md 5, Lemma A).
         def self.v1_identity(cp)
           cp == 0x27 ? 0x2019 : cp
+        end
+
+        # The `next` (step 1) and `prev` (step -1) of the quoted-lone-mark veto (quotes.md 3.2,
+        # spec 1.33.0): a run of inline space is skipped exactly where nbsp can insert one. Returns
+        # nil when there is no such index.
+        def self.step_to_mark(cp, a, step, skip_sets)
+          n = cp.length
+          near, far = step == 1 ? %i[space_right space_left] : %i[space_left space_right]
+          k = a + step
+          if skip_sets[near][cp[a]]
+            k += step while k >= 0 && k < n && QuoteAmbiguity.inline_space?(cp[k])
+          elsif k >= 0 && k < n && QuoteAmbiguity.inline_space?(cp[k])
+            k2 = k
+            k2 += step while k2 >= 0 && k2 < n && QuoteAmbiguity.inline_space?(cp[k2])
+            return nil unless k2 >= 0 && k2 < n && skip_sets[far][cp[k2]]
+
+            k = k2
+          end
+          k >= 0 && k < n ? k : nil
+        end
+
+        # Quoted-lone-mark veto (quotes.md 3.2, spec 1.33.0): `'"'` and `"'"` mention a character
+        # and are not quotations, both outer marks are declined.
+        def self.quoted_lone_mark?(cp, i, skip_sets)
+          g_id = v1_identity(cp[i])
+          return false unless TYPEWRITER_IDENTITIES.include?(g_id)
+
+          [1, -1].any? do |step|
+            m = step_to_mark(cp, i, step, skip_sets)
+            next false if m.nil?
+
+            m_id = v1_identity(cp[m])
+            next false if !TYPEWRITER_IDENTITIES.include?(m_id) || m_id == g_id
+
+            o = step_to_mark(cp, m, step, skip_sets)
+            !o.nil? && v1_identity(cp[o]) == g_id
+          end
         end
 
         # glyph_codepoint decodes a locale-declared quote glyph (guaranteed by schema to be
@@ -207,6 +249,11 @@ module Polytypo
                            (r_lit != Engine::NONE && QuoteAmbiguity.inline_space?(r_lit) &&
                             v1_identity(r_skip) == g_v1 && gap_insertable)
             if left_vetoed || right_vetoed
+              can_open = false
+              can_close = false
+            end
+
+            if quoted_lone_mark?(cp, i, skip_sets)
               can_open = false
               can_close = false
             end
@@ -335,12 +382,9 @@ module Polytypo
         # disagree.
         def self.certify(cp, initial_pairs, quotes_data, skip_sets, idioms, clitics)
           accepted = initial_pairs.dup
-          # Each round accepts or strictly shrinks `accepted`; it is finite and the empty set
-          # accepts unconditionally, so the loop runs at most |A0| + 1 times (quotes.md 3.5). The
-          # bound below is a defensive safety net, not a normative one.
-          max_rounds = initial_pairs.length + 2
-
-          (0..max_rounds).each do
+          # quotes.md 3.5 round cap (spec 1.33.0): if round GATE_ROUNDS_MAX does not accept, the
+          # empty set is accepted and the rule emits nothing for the call.
+          GATE_ROUNDS_MAX.times do
             return accepted if accepted.empty?
 
             plan = compute_render_plan(cp, accepted, quotes_data)
@@ -369,7 +413,6 @@ module Polytypo
             end
           end
 
-          # Unreachable given the termination argument; declines everything rather than looping.
           []
         end
 
