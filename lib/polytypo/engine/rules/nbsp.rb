@@ -307,6 +307,29 @@ module Polytypo
           nil
         end
 
+        # Buckets items by every code point their first character can match, keeping the list
+        # order inside a bucket so the first (longest) match still wins. Lets a sub-rule try only
+        # the patterns that can start at cp[a] instead of every pattern at every position. The
+        # block names the code points an item can start with; the default is its own first one.
+        def self.index_by_first(items)
+          index = {}
+          items.each do |item|
+            keys = block_given? ? yield(item) : [item[0]]
+            keys.each { |c| (index[c] ||= []) << item }
+          end
+          index
+        end
+
+        # N3: a pattern's first character, or its simple uppercase (3.5 step 1).
+        def self.first_char_or_uppercase(w)
+          [w[0], UnicodeUtil.simple_uppercase(w[0])].uniq
+        end
+
+        # N4: a pattern U+0020 also matches U+00A0 and U+202F (3.6 step 1).
+        def self.first_char_or_no_break_space(w)
+          w[0] == SPACE ? [SPACE, NBSP, NNBSP] : [w[0]]
+        end
+
         # N1 (3.3, beforePunctuation -> U+00A0) and N2 (3.4, narrowBeforePunctuation ->
         # U+202F): identical shape with target/other exchanged.
         def self.punctuation_sub_rule(cp, prep, claims, marks, target, other)
@@ -358,8 +381,12 @@ module Polytypo
         def self.short_words_sub_rule(cp, prep, claims)
           return if prep.short_words.empty?
 
+          by_first = index_by_first(prep.short_words) { |w| first_char_or_uppercase(w) }
           (0...cp.length).each do |a|
-            w = longest_match(prep.short_words, cp, a, method(:match_first_char_lenient?))
+            bucket = by_first[cp[a]]
+            next if bucket.nil?
+
+            w = longest_match(bucket, cp, a, method(:match_first_char_lenient?))
             next if w.nil?
 
             k = w.length
@@ -384,8 +411,12 @@ module Polytypo
         def self.abbreviations_sub_rule(cp, prep, claims)
           return if prep.abbreviations.empty?
 
+          by_first = index_by_first(prep.abbreviations) { |w| first_char_or_no_break_space(w) }
           (0...cp.length).each do |a|
-            w = longest_match(prep.abbreviations, cp, a, method(:match_space_lenient?))
+            bucket = by_first[cp[a]]
+            next if bucket.nil?
+
+            w = longest_match(bucket, cp, a, method(:match_space_lenient?))
             next if w.nil?
 
             k = w.length
@@ -514,8 +545,12 @@ module Polytypo
         def self.units_sub_rule(cp, prep, claims)
           return if prep.units.empty?
 
+          by_first = index_by_first(prep.units) { |entry| [entry.w[0]] }
           (0...cp.length).each do |a|
-            entry = prep.units.find { |candidate| match_exact?(cp, a, candidate.w) }
+            bucket = by_first[cp[a]]
+            next if bucket.nil?
+
+            entry = bucket.find { |candidate| match_exact?(cp, a, candidate.w) }
             next if entry.nil?
 
             k = entry.w.length
@@ -569,8 +604,12 @@ module Polytypo
         def self.symbols_sub_rule(cp, prep, claims)
           return if prep.symbols.empty?
 
+          by_first = index_by_first(prep.symbols)
           (0...cp.length).each do |a|
-            w = longest_match(prep.symbols, cp, a, method(:match_exact?))
+            bucket = by_first[cp[a]]
+            next if bucket.nil?
+
+            w = longest_match(bucket, cp, a, method(:match_exact?))
             next if w.nil?
 
             k = w.length
@@ -710,8 +749,12 @@ module Polytypo
         def self.forward_binding_sub_rule(cp, prep, claims, patterns, wants_digit)
           return if patterns.empty?
 
+          by_first = index_by_first(patterns)
           (0...cp.length).each do |a|
-            w = longest_match(patterns, cp, a, method(:match_exact?))
+            bucket = by_first[cp[a]]
+            next if bucket.nil?
+
+            w = longest_match(bucket, cp, a, method(:match_exact?))
             next if w.nil?
 
             k = w.length
