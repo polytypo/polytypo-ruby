@@ -8,9 +8,6 @@ require "json"
 # sweeps every locale's lists against that linear matcher.
 RSpec.describe "nbsp first-character index" do
   nbsp = Polytypo::Engine::Rules::Nbsp
-  space = 0x20
-  no_break_space = 0xA0
-  narrow_no_break_space = 0x202F
 
   registry = JSON.parse(File.read(File.expand_path("../lib/polytypo/data/locales/registry.json", __dir__)))
 
