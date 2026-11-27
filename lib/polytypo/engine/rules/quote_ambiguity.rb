@@ -44,12 +44,16 @@ module Polytypo
         # same anchor the elisionIdioms matcher already uses.
         INLINE_SPACE = [0x20, 0x09, 0xA0, 0x202F, 0x2007, 0x2009, 0x200A].freeze
 
+        NARROW_SET = NARROW.to_h { |c| [c, true] }.freeze
+
         def self.narrow?(cp)
-          NARROW.include?(cp)
+          NARROW_SET.key?(cp)
         end
 
+        INLINE_SPACE_SET = INLINE_SPACE.to_h { |c| [c, true] }.freeze
+
         def self.inline_space?(cp)
-          INLINE_SPACE.include?(cp)
+          INLINE_SPACE_SET.key?(cp)
         end
 
         # at(cp, i) returns cp[i], or Engine::NONE if i is out of bounds -- the spec's own

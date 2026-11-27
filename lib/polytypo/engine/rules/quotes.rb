@@ -35,8 +35,10 @@ module Polytypo
         OPENISH_LITERAL = [0x28, 0x5B, 0x7B].freeze
         CLOSEISH_LITERAL = [0x29, 0x5D, 0x7D, 0x2C, 0x2E, 0x3B, 0x3A, 0x21, 0x3F, 0x2026, 0x2013, 0x2014].freeze
 
+        WIDE_SET = WIDE.to_h { |c| [c, true] }.freeze
+
         def self.quote_mark?(cp)
-          WIDE.include?(cp) || QuoteAmbiguity.narrow?(cp)
+          WIDE_SET.key?(cp) || QuoteAmbiguity.narrow?(cp)
         end
 
         def self.digit?(cp)
@@ -47,8 +49,10 @@ module Polytypo
           digit?(cp) || UnicodeUtil.letter?(cp)
         end
 
+        BREAK_SET = BREAK.to_h { |c| [c, true] }.freeze
+
         def self.break?(cp)
-          BREAK.include?(cp)
+          BREAK_SET.key?(cp)
         end
 
         # SPACELIKE = INLINE-SPACE ∪ BREAK.
